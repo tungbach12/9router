@@ -201,6 +201,27 @@ export class DefaultExecutor extends BaseExecutor {
             }
           }
         }
+        // Strip remaining Claude Code identity headers injected by claudeOverlay hook
+        // that are not needed for third-party upstreams
+        for (const key of [
+          "anthropic-version", "Anthropic-Version",
+          "x-stainless-helper-method", "X-Stainless-Helper-Method",
+          "x-stainless-retry-count", "X-Stainless-Retry-Count",
+          "x-stainless-runtime-version", "X-Stainless-Runtime-Version",
+          "x-stainless-package-version", "X-Stainless-Package-Version",
+          "x-stainless-runtime", "X-Stainless-Runtime",
+          "x-stainless-lang", "X-Stainless-Lang",
+          "x-stainless-arch", "X-Stainless-Arch",
+          "x-stainless-os", "X-Stainless-Os",
+          "x-stainless-timeout", "X-Stainless-Timeout",
+          "x-claude-code-session-id", "X-Claude-Code-Session-Id",
+          "package-version", "Package-Version",
+          "runtime-version", "Runtime-Version",
+          "os", "Os", "OS",
+          "arch", "Arch",
+        ]) {
+          delete headers[key];
+        }
       }
     }
 
