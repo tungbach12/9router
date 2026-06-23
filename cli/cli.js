@@ -493,20 +493,47 @@ const serverPath = fs.existsSync(customServerPath)
   ? customServerPath
   : path.join(standaloneDir, "server.js");
 
-if (!fs.existsSync(serverPath)) {
-  console.error("Error: Standalone build not found.");
-  console.error("Please run 'npm run build:cli' first.");
-  process.exit(1);
-}
+// Detect mode: standalone or dev fallback
+const useDevMode = !fs.existsSync(serverPath);
 
-// Check for updates FIRST, then start server
-checkForUpdate().then((latestVersion) => {
-  killAllAppProcesses(port).then(() => {
-    return killProcessOnPort(port);
-  }).then(() => {
-    startServer(latestVersion);
+if (useDevMode) {
+  // Dev mode: find project source and run next dev
+  const possibleRoots = [
+    path.join(__dirname, ".."),
+    path.resolve(__dirname, "../.."),
+    "E:\\githubProjects\\9router",
+  ];
+  let projectRoot = null;
+  for (const root of possibleRoots) {
+    if (fs.existsSync(path.join(root, "package.json")) && fs.existsSync(path.join(root, "src", "app"))) {
+      projectRoot = root;
+      break;
+    }
+  }
+  if (!projectRoot) {
+    console.error("Error: Standalone build not found and project source not detected.");
+    console.error("Please run 'npm run build:cli' first.");
+    process.exit(1);
+  }
+  console.log(`\x1b[33m⚠ Standalone build not found. Running in dev mode from: ${projectRoot}\x1b[0m`);
+  
+  checkForUpdate().then((latestVersion) => {
+    killAllAppProcesses(port).then(() => {
+      return killProcessOnPort(port);
+    }).then(() => {
+      spawnDevServer(projectRoot);
+    });
   });
-});
+} else {
+  // Check for updates FIRST, then start server
+  checkForUpdate().then((latestVersion) => {
+    killAllAppProcesses(port).then(() => {
+      return killProcessOnPort(port);
+    }).then(() => {
+      startServer(latestVersion);
+    });
+  });
+}
 
 // Show interface selection menu
 async function showInterfaceMenu(latestVersion) {
@@ -555,6 +582,43 @@ async function showInterfaceMenu(latestVersion) {
 
 const MAX_RESTARTS = 2;
 const RESTART_RESET_MS = 30000; // Reset counter if alive > 30s
+
+function spawnDevServer(projectRoot) {
+  const displayHost = getDisplayHost();
+  const url = `http://${displayHost}:${port}/dashboard`;
+  console.log(`\x1b[32m🚀 Starting 9router in dev mode on ${url}\x1b[0m`);
+
+  const child = spawn(RUNTIME, [
+    "node_modules/next/dist/bin/next", "dev", "--webpack", "--port", port.toString()
+  ], {
+    cwd: projectRoot,
+    stdio: "inherit",
+    detached: true,
+    windowsHide: true,
+    env: {
+      ...process.env,
+      PORT: port.toString(),
+      NEXT_PUBLIC_BASE_URL: `http://localhost:${port}`
+    }
+  });
+
+  child.on("error", (err) => {
+    console.error("Dev server error:", err.message);
+  });
+
+  child.unref();
+
+  // Open browser after a delay
+  setTimeout(() => {
+    if (!noBrowser) openBrowser(url);
+    console.log(`\x1b[32m✅ 9router dev server running at ${url}\x1b[0m`);
+    console.log(`\x1b[90m   Press Ctrl+C to stop\x1b[0m`);
+  }, 5000);
+
+  // Handle cleanup
+  process.on("SIGINT", () => { try { process.kill(-child.pid); } catch {} process.exit(0); });
+  process.on("SIGTERM", () => { try { process.kill(-child.pid); } catch {} process.exit(0); });
+}
 
 function startServer(latestVersion) {
   const displayHost = getDisplayHost();

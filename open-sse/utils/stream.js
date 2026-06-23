@@ -356,60 +356,64 @@ export function createSSEStream(options = {}) {
           return;
         }
 
-        if (buffer.trim()) {
-          const parsed = parseSSELine(buffer.trim());
-          if (parsed && !parsed.done) {
-            const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
+        // Only emit trailing events if message_stop was not already sent
+        // (prevents content_block_delta/message_delta after message_stop from corrupting the client's SSE parser)
+        if (!state.finishReasonSent) {
+          if (buffer.trim()) {
+            const parsed = parseSSELine(buffer.trim());
+            if (parsed && !parsed.done) {
+              const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
 
-            if (translated?._openaiIntermediate) {
-              for (const item of translated._openaiIntermediate) {
-                const openaiOutput = formatSSE(item, FORMATS.OPENAI);
-                reqLogger?.appendOpenAIChunk?.(openaiOutput);
+              if (translated?._openaiIntermediate) {
+                for (const item of translated._openaiIntermediate) {
+                  const openaiOutput = formatSSE(item, FORMATS.OPENAI);
+                  reqLogger?.appendOpenAIChunk?.(openaiOutput);
+                }
+              }
+
+              if (translated?.length > 0) {
+                for (const item of translated) {
+                  if (item === null || item === undefined) continue;
+                  const output = formatSSE(item, sourceFormat);
+                  reqLogger?.appendConvertedChunk?.(output);
+                  controller.enqueue(sharedEncoder.encode(output));
+                }
               }
             }
+          }
 
-            if (translated?.length > 0) {
-              for (const item of translated) {
-                if (item === null || item === undefined) continue;
-                const output = formatSSE(item, sourceFormat);
-                reqLogger?.appendConvertedChunk?.(output);
-                controller.enqueue(sharedEncoder.encode(output));
-              }
+          const flushed = translateResponse(targetFormat, sourceFormat, null, state);
+
+          if (flushed?._openaiIntermediate) {
+            for (const item of flushed._openaiIntermediate) {
+              const openaiOutput = formatSSE(item, FORMATS.OPENAI);
+              reqLogger?.appendOpenAIChunk?.(openaiOutput);
             }
           }
-        }
 
-        const flushed = translateResponse(targetFormat, sourceFormat, null, state);
-
-        if (flushed?._openaiIntermediate) {
-          for (const item of flushed._openaiIntermediate) {
-            const openaiOutput = formatSSE(item, FORMATS.OPENAI);
-            reqLogger?.appendOpenAIChunk?.(openaiOutput);
+          if (flushed?.length > 0) {
+            for (const item of flushed) {
+              if (item === null || item === undefined) continue;
+              const output = formatSSE(item, sourceFormat);
+              reqLogger?.appendConvertedChunk?.(output);
+              controller.enqueue(sharedEncoder.encode(output));
+            }
           }
-        }
 
-        if (flushed?.length > 0) {
-          for (const item of flushed) {
-            if (item === null || item === undefined) continue;
-            const output = formatSSE(item, sourceFormat);
-            reqLogger?.appendConvertedChunk?.(output);
-            controller.enqueue(sharedEncoder.encode(output));
+          // Synthesize response.failed if a Responses passthrough stream never reached a terminal event
+          const keepsOpenAIResponsesFormat = targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.OPENAI_RESPONSES;
+          if (keepsOpenAIResponsesFormat && !openAIResponsesTerminalSeen) {
+            const failedOutput = formatIncompleteOpenAIResponsesStreamFailure();
+            reqLogger?.appendConvertedChunk?.(failedOutput);
+            controller.enqueue(sharedEncoder.encode(failedOutput));
+            openAIResponsesTerminalSeen = true;
           }
-        }
 
-        // Synthesize response.failed if a Responses passthrough stream never reached a terminal event
-        const keepsOpenAIResponsesFormat = targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.OPENAI_RESPONSES;
-        if (keepsOpenAIResponsesFormat && !openAIResponsesTerminalSeen) {
-          const failedOutput = formatIncompleteOpenAIResponsesStreamFailure();
-          reqLogger?.appendConvertedChunk?.(failedOutput);
-          controller.enqueue(sharedEncoder.encode(failedOutput));
-          openAIResponsesTerminalSeen = true;
-        }
-
-        if (!keepsOpenAIResponsesFormat || !openAIResponsesDoneSent) {
-          const doneOutput = "data: [DONE]\n\n";
-          reqLogger?.appendConvertedChunk?.(doneOutput);
-          controller.enqueue(sharedEncoder.encode(doneOutput));
+          if (!keepsOpenAIResponsesFormat || !openAIResponsesDoneSent) {
+            const doneOutput = "data: [DONE]\n\n";
+            reqLogger?.appendConvertedChunk?.(doneOutput);
+            controller.enqueue(sharedEncoder.encode(doneOutput));
+          }
         }
 
         if (!hasValidUsage(state?.usage) && totalContentLength > 0) {

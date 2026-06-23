@@ -156,7 +156,7 @@ function convertClaudeMessage(msg) {
             id: block.id,
             type: OPENAI_BLOCK.FUNCTION,
             function: {
-              name: block.name,
+              name: block.name || block.id,
               arguments: JSON.stringify(block.input || {})
             }
           });

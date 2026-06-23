@@ -44,17 +44,19 @@ const HEADER_HOOKS = {
   claudeOverlay: (h) => {
     const cached = getCachedClaudeHeaders();
     if (!cached) return;
-    for (const lcKey of Object.keys(cached)) {
+    // Copy to avoid mutating the shared singleton
+    const overlay = { ...cached };
+    for (const lcKey of Object.keys(overlay)) {
       const titleKey = lcKey.replace(/(^|-)([a-z])/g, (_, sep, ch) => sep + ch.toUpperCase());
       if (lcKey === "anthropic-beta") {
         const staticBetaStr = h[titleKey] || h[lcKey] || "";
         const flags = new Set(staticBetaStr.split(",").map(f => f.trim()).filter(Boolean));
-        for (const f of cached[lcKey].split(",").map(f => f.trim()).filter(Boolean)) flags.add(f);
-        cached[lcKey] = Array.from(flags).join(",");
+        for (const f of overlay[lcKey].split(",").map(f => f.trim()).filter(Boolean)) flags.add(f);
+        overlay[lcKey] = Array.from(flags).join(",");
       }
       if (titleKey !== lcKey && h[titleKey] !== undefined) delete h[titleKey];
     }
-    Object.assign(h, cached);
+    Object.assign(h, overlay);
   },
 };
 
@@ -152,7 +154,7 @@ export class DefaultExecutor extends BaseExecutor {
   // Fallback descriptor for providers without an explicit entry in AUTH_DESCRIPTORS.
   resolveAuthDescriptor() {
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
-      return { apiKey: { header: "x-api-key", scheme: "raw" }, oauth: { header: "Authorization", scheme: "bearer" }, anthropicVersion: true };
+      return { apiKey: { header: "x-api-key", scheme: "raw" }, oauth: { header: "Authorization", scheme: "bearer" }, anthropicVersion: true, hooks: ["claudeOverlay"] };
     }
     if (this.config?.format === "claude") {
       return { ...XAPIKEY, anthropicVersion: true };
@@ -172,7 +174,8 @@ export class DefaultExecutor extends BaseExecutor {
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || "";
       const isOfficialAnthropic = baseUrl === "" || baseUrl.includes("api.anthropic.com");
-      if (!isOfficialAnthropic) {
+      const spoofClaude = credentials?.providerSpecificData?.spoofClaudeHeaders;
+      if (!isOfficialAnthropic && !spoofClaude) {
         // Some third-party Anthropic-compatible gateways require Bearer auth in
         // addition to x-api-key. Send both (x-api-key already set above) so
         // gateways that read either header succeed.

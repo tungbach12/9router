@@ -10,6 +10,11 @@ import { extractReasoningText } from "../concerns/reasoning.js";
 // is then a no-op. Kept intentionally; do NOT couple to request's empty prefix.
 const CLAUDE_OAUTH_TOOL_PREFIX = "proxy_";
 
+let fallbackToolNameCounter = 0;
+function nextFallbackToolName() {
+  return `tool_${++fallbackToolNameCounter}`;
+}
+
 // Sanitize tool call arguments to fix bad params from non-Anthropic models
 function sanitizeToolArgs(toolName, argsJson) {
   try {
@@ -189,10 +194,12 @@ export function openaiToClaudeResponse(chunk, state) {
         stopTextBlock(state, results);
 
         const toolBlockIndex = state.nextBlockIndex++;
-        state.toolCalls.set(idx, { id: tc.id, name: tc.function?.name || "", blockIndex: toolBlockIndex });
+        const rawName = tc.function?.name || "";
+        const safeName = rawName || nextFallbackToolName();
+        state.toolCalls.set(idx, { id: tc.id, name: safeName, blockIndex: toolBlockIndex });
 
         // Strip prefix from tool name for response
-        let toolName = tc.function?.name || "";
+        let toolName = safeName;
         if (toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
           toolName = toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length);
         }
@@ -222,8 +229,18 @@ export function openaiToClaudeResponse(chunk, state) {
 
   // Finish
   if (choice.finish_reason) {
+    // Guard: prevent re-emitting finish events (saw "message_stop without a
+    // current message" when some upstream APIs send multiple finish chunks
+    // or buffer leftovers trigger a second pass through the finish handler).
+    if (state.finishReasonSent) {
+      return results.length > 0 ? results : null;
+    }
+
     stopThinkingBlock(state, results);
     stopTextBlock(state, results);
+
+    // Snapshot tool call count before clearing (used for finish_reason override below)
+    const hadToolCalls = state.toolCalls && state.toolCalls.size > 0;
 
     for (const [idx, toolInfo] of state.toolCalls) {
       // Emit buffered + sanitized args as single delta before stop
@@ -241,15 +258,26 @@ export function openaiToClaudeResponse(chunk, state) {
         index: toolInfo.blockIndex
       });
     }
+    // Clear tool call state so a second pass produces no duplicate events
+    state.toolCalls.clear();
+    state.toolArgBuffers = null;
 
     // Mark finish for later usage injection in stream.js
     state.finishReason = choice.finish_reason;
+    state.finishReasonSent = true;
+
+    // Override stop_reason: if the upstream says "stop" but we have tool calls,
+    // emit "tool_use" — some models (kimi-k2.6, step-3.7-flash) incorrectly
+    // send finish_reason="stop" when they actually intend tool_calls.
+    const effectiveFinish = hadToolCalls && choice.finish_reason === "stop"
+      ? "tool_calls"
+      : choice.finish_reason;
 
     // Use tracked usage (will be estimated in stream.js if not valid)
     const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
     results.push({
       type: "message_delta",
-      delta: { stop_reason: convertFinishReason(choice.finish_reason) },
+      delta: { stop_reason: convertFinishReason(effectiveFinish) },
       usage: finalUsage
     });
     results.push({ type: "message_stop" });

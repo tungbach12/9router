@@ -241,13 +241,26 @@ export default function ModelSelectModal({
 
         // Aliases are stored using the raw providerId as key (e.g. "openai-compatible-chat-<uuid>/glm-4.7"),
         // so we must filter by providerId, not by the display prefix.
-        const nodeModels = Object.entries(modelAliases)
+        const aliasModels = Object.entries(modelAliases)
           .filter(([, fullModel]) => fullModel.startsWith(`${providerId}/`))
           .map(([aliasName, fullModel]) => ({
             id: fullModel.replace(`${providerId}/`, ""),
             name: aliasName,
             value: `${nodePrefix}/${fullModel.replace(`${providerId}/`, "")}`,
           }));
+
+        // Also include custom models registered via the provider detail page (Add/Import buttons).
+        const aliasIds = new Set(aliasModels.map((m) => m.id));
+        const customRegisteredModels = customModels
+          .filter((m) => m.providerAlias === providerId && !aliasIds.has(m.id))
+          .map((m) => ({
+            id: m.id,
+            name: m.name || m.id,
+            value: `${nodePrefix}/${m.id}`,
+            isCustom: true,
+          }));
+
+        const nodeModels = [...aliasModels, ...customRegisteredModels];
 
         // Always show compatible providers that are connected, even with no aliases.
         // When no aliases exist, show a placeholder so users know it's available.

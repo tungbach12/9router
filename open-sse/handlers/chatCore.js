@@ -18,7 +18,8 @@ import { handleForcedSSEToJson } from "./chatCore/sseToJsonHandler.js";
 import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
 import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/streamingHandler.js";
 import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
-import { dedupeTools } from "../utils/toolDeduper.js";
+
+import { cacheClaudeHeaders } from "../utils/claudeHeaderCache.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
@@ -103,6 +104,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const clientTool = detectClientTool(clientRawRequest?.headers || {}, body);
   const passthrough = isNativePassthrough(clientTool, provider);
 
+  // Cache Claude Code identity headers for spoofClaudeHeaders-enabled upstreams
+  cacheClaudeHeaders(clientRawRequest?.headers || {});
+
   // Expose raw client headers to translators/executors for session-id resolution
   if (credentials) credentials.rawHeaders = clientRawRequest?.headers || {};
 
@@ -127,6 +131,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     // Normalize newer Cowork/CC beta shapes (adaptive thinking, mid-conversation system) the API rejects
     if (clientTool === "claude") normalizeClaudePassthrough(translatedBody, upstreamModel);
   } else {
+    console.log(`[TOOLDEBUG] provider=${provider} sourceFormat=${sourceFormat} targetFormat=${targetFormat} hasTools=${!!body.tools} toolCount=${body.tools?.length}`);
     translatedBody = translateRequest(sourceFormat, targetFormat, upstreamModel, body, stream, credentials, provider, reqLogger, stripList, connectionId, clientTool);
     if (!translatedBody) {
       trackPendingRequest(model, provider, connectionId, false, true);
@@ -135,15 +140,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     toolNameMap = translatedBody._toolNameMap;
     delete translatedBody._toolNameMap;
     translatedBody.model = upstreamModel;
-  }
-
-  // Dedupe duplicate built-in tools when equivalent MCP tools are present (Claude clients only).
-  if (clientTool === "claude" && Array.isArray(translatedBody.tools)) {
-    const { tools: deduped, stripped } = dedupeTools(translatedBody.tools);
-    if (stripped.length > 0) {
-      translatedBody.tools = deduped;
-      log?.debug?.("TOOLDEDUP", `stripped ${stripped.length}: ${stripped.slice(0, 3).join(", ")}${stripped.length > 3 ? "..." : ""}`);
-    }
+    console.log(`[TOOLDEBUG] translated hasTools=${!!translatedBody.tools} toolCount=${translatedBody.tools?.length}`);
   }
 
   // Token savers: applied at the final body just before dispatch
