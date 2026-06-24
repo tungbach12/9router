@@ -151,6 +151,19 @@ export class BaseExecutor {
         const cl = response.headers?.get?.("content-length") || "?";
         dbg("FETCH", `${this.provider.toUpperCase()} ← ${response.status} | ttft=${Date.now() - fetchT0}ms | ct=${ct} | cl=${cl}`);
 
+        // Debug: dump first 500 bytes of non-JSON error responses for diagnosis
+        if (!response.ok && ct && !ct.includes("json") && !ct.includes("text/event-stream") && !ct.includes("text/plain")) {
+          try {
+            const clone = response.clone();
+            const buf = await clone.arrayBuffer();
+            const bytes = new Uint8Array(buf).slice(0, 500);
+            const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join(" ");
+            const ascii = Array.from(bytes).map(b => (b >= 32 && b <= 126) ? String.fromCharCode(b) : ".").join("");
+            dbg("FETCH", `${this.provider.toUpperCase()} Binary response (first ${bytes.length}B): hex=${hex}`);
+            dbg("FETCH", `${this.provider.toUpperCase()} Binary response ASCII: ${ascii}`);
+          } catch {}
+        }
+
         if (await tryRetry(urlIndex, response.status, `status ${response.status}`, response)) { urlIndex--; continue; }
 
         if (this.shouldRetry(response.status, urlIndex)) {

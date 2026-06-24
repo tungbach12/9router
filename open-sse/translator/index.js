@@ -112,6 +112,11 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
     result = filterToOpenAIFormat(result);
   }
 
+  // Safety net: ensure all tool_calls have id after translation (NVIDIA/vLLM require it)
+  if (targetFormat === FORMATS.OPENAI) {
+    ensureToolCallIds(result);
+  }
+
   // Final step: prepare request for Claude format endpoints
   if (targetFormat === FORMATS.CLAUDE) {
     const apiKey = credentials?.accessToken || credentials?.apiKey || null;

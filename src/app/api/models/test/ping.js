@@ -47,6 +47,7 @@ async function getInternalHeaders() {
   const headers = { "Content-Type": "application/json" };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
   headers["x-9r-cli-token"] = await getConsistentMachineId(CLI_TOKEN_SALT);
+  headers["User-Agent"] = "claude-cli/2.1.92 (external, sdk-cli)";
   return headers;
 }
 
@@ -184,6 +185,16 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
       latencyMs,
       status: res.status,
       error: "Provider returned no completion choices for this model",
+    };
+  }
+
+  const content = parsed?.choices?.[0]?.message?.content || "";
+  if (content.includes("Please use Claude Code CLI") || content.includes("CLI Command Execution")) {
+    return {
+      ok: false,
+      latencyMs,
+      status: res.status,
+      error: "Provider returned fake/rejection response",
     };
   }
 

@@ -202,9 +202,9 @@ export class DefaultExecutor extends BaseExecutor {
           }
         }
         // Strip remaining Claude Code identity headers injected by claudeOverlay hook
-        // that are not needed for third-party upstreams
+        // that are not needed for third-party upstreams.
+        // NOTE: anthropic-version is NOT stripped — it's a required standard API header.
         for (const key of [
-          "anthropic-version", "Anthropic-Version",
           "x-stainless-helper-method", "X-Stainless-Helper-Method",
           "x-stainless-retry-count", "X-Stainless-Retry-Count",
           "x-stainless-runtime-version", "X-Stainless-Runtime-Version",
@@ -226,6 +226,15 @@ export class DefaultExecutor extends BaseExecutor {
     }
 
     if (stream) headers["Accept"] = "text/event-stream";
+
+    // Debug: dump final headers for anthropic-compatible providers to diagnose 403 issues
+    if (this.provider?.startsWith?.("anthropic-compatible-")) {
+      const safeHeaders = { ...headers };
+      if (safeHeaders["x-api-key"]) safeHeaders["x-api-key"] = safeHeaders["x-api-key"].slice(0, 8) + "...";
+      if (safeHeaders["Authorization"]) safeHeaders["Authorization"] = safeHeaders["Authorization"].slice(0, 20) + "...";
+      console.log(`[AUTH_DEBUG] [${this.provider}] Final headers: ${JSON.stringify(safeHeaders)}`);
+    }
+
     return headers;
   }
 

@@ -4,7 +4,7 @@ import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button } from "@/shared/components";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
-function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
+function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, testLatency, isTesting }) {
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
@@ -29,6 +29,11 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
         <p className="text-sm font-medium truncate">{modelId}</p>
         <div className="flex items-center gap-1 mt-1">
           <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
+          {testStatus === "ok" && testLatency != null && (
+            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${testLatency < 2000 ? "text-green-500 bg-green-500/10" : testLatency < 5000 ? "text-yellow-500 bg-yellow-500/10" : "text-red-500 bg-red-500/10"}`}>
+              {(testLatency / 1000).toFixed(1)}s
+            </span>
+          )}
           <div className="relative group/btn">
             <button
               onClick={() => onCopy(fullModel, `model-${modelId}`)}
@@ -77,6 +82,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
   const [importing, setImporting] = useState(false);
   const [testingModelId, setTestingModelId] = useState(null);
   const [modelTestResults, setModelTestResults] = useState({});
+  const [testingAll, setTestingAll] = useState(false);
 
   const handleTestModel = async (modelId) => {
     if (testingModelId) return;
@@ -88,9 +94,9 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
         body: JSON.stringify({ model: `${providerStorageAlias}/${modelId}` }),
       });
       const data = await res.json();
-      setModelTestResults((prev) => ({ ...prev, [modelId]: data.ok ? "ok" : "error" }));
+      setModelTestResults((prev) => ({ ...prev, [modelId]: { status: data.ok ? "ok" : "error", latency: data.latencyMs } }));
     } catch {
-      setModelTestResults((prev) => ({ ...prev, [modelId]: "error" }));
+      setModelTestResults((prev) => ({ ...prev, [modelId]: { status: "error", latency: null } }));
     } finally {
       setTestingModelId(null);
     }
@@ -102,6 +108,34 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
     providerAlias: providerStorageAlias,
     type: "llm",
   });
+
+  const handleTestAllModels = async () => {
+    if (testingAll || connections.length === 0) return;
+    setTestingAll(true);
+    try {
+      const connId = connections[0].id;
+      // Only test models currently in the list
+      const modelsPayload = allModels.map((m) => ({ id: m.id, kind: "llm" }));
+      if (modelsPayload.length === 0) return;
+      const res = await fetch(`/api/providers/${connId}/test-models`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ models: modelsPayload }),
+      });
+      const data = await res.json();
+      if (data.results) {
+        const results = {};
+        for (const r of data.results) {
+          results[r.modelId] = { status: r.ok ? "ok" : "error", latency: r.latencyMs };
+        }
+        setModelTestResults((prev) => ({ ...prev, ...results }));
+      }
+    } catch {
+      // ignore
+    } finally {
+      setTestingAll(false);
+    }
+  };
 
   const handleAdd = async () => {
     if (!newModel.trim() || adding) return;
@@ -185,6 +219,11 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
         <Button size="sm" variant="secondary" icon="download" onClick={handleImport} disabled={!canImport || importing}>
           {importing ? "Importing..." : "Import from /models"}
         </Button>
+        {connections.length > 0 && (
+          <Button size="sm" variant="secondary" icon={testingAll ? "progress_activity" : "check_circle"} onClick={handleTestAllModels} disabled={testingAll}>
+            {testingAll ? "Testing..." : "Test All"}
+          </Button>
+        )}
       </div>
 
       {!canImport && (
@@ -204,7 +243,8 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
               onCopy={onCopy}
               onDeleteAlias={() => source === "custom" ? onDeleteCustomModel(id) : onDeleteAlias(alias)}
               onTest={connections.length > 0 ? () => handleTestModel(id) : undefined}
-              testStatus={modelTestResults[id]}
+              testStatus={modelTestResults[id]?.status}
+              testLatency={modelTestResults[id]?.latency}
               isTesting={testingModelId === id}
             />
           ))}

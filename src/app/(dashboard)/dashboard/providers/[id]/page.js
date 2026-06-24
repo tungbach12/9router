@@ -71,6 +71,7 @@ export default function ProviderDetailPage() {
   const [oneByOneSummary, setOneByOneSummary] = useState(null);
   const stopOneByOneRef = useRef(false);
   const [importingQoderModels, setImportingQoderModels] = useState(false);
+  const [testingAllModels, setTestingAllModels] = useState(false);
   const { copied, copy } = useCopyToClipboard();
 
   const AG_RISK_STORAGE_KEY = "ag_risk_confirmed";
@@ -950,13 +951,58 @@ export default function ProviderDetailPage() {
         body: JSON.stringify({ model: `${providerStorageAlias}/${modelId}` }),
       });
       const data = await res.json();
-      setModelTestResults((prev) => ({ ...prev, [modelId]: data.ok ? "ok" : "error" }));
+      setModelTestResults((prev) => ({ ...prev, [modelId]: { status: data.ok ? "ok" : "error", latency: data.latencyMs } }));
       setModelsTestError(data.ok ? "" : (data.error || "Model not reachable"));
     } catch {
-      setModelTestResults((prev) => ({ ...prev, [modelId]: "error" }));
+      setModelTestResults((prev) => ({ ...prev, [modelId]: { status: "error", latency: null } }));
       setModelsTestError("Network error");
     } finally {
       setTestingModelIds((prev) => { const n = new Set(prev); n.delete(modelId); return n; });
+    }
+  };
+
+  const handleTestAllModels = async () => {
+    if (testingAllModels || connections.length === 0) return;
+    setTestingAllModels(true);
+    setModelsTestError("");
+    try {
+      const connId = connections[0].id;
+      // Collect all visible model IDs from component-level data
+      const allModelIds = [
+        ...models.map((m) => m.id),
+        ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)).map((m) => m.id),
+        ...customModels.filter((m) => m.providerAlias === providerStorageAlias).map((m) => m.id),
+      ].filter((id) => !disabledModelIds.includes(id));
+      const modelsPayload = allModelIds.map((id) => ({ id, kind: "llm" }));
+      if (modelsPayload.length === 0) {
+        setModelsTestError("No models to test");
+        return;
+      }
+      const res = await fetch(`/api/providers/${connId}/test-models`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ models: modelsPayload }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setModelsTestError(data.error);
+        return;
+      }
+      const results = {};
+      for (const r of data.results || []) {
+        results[r.modelId] = { status: r.ok ? "ok" : "error", latency: r.latencyMs };
+      }
+      setModelTestResults((prev) => ({ ...prev, ...results }));
+      const errors = (data.results || []).filter((r) => !r.ok);
+      if (errors.length > 0) {
+        setModelsTestError(`${errors.length} model(s) failed`);
+      } else {
+        setModelsTestError("");
+      }
+    } catch {
+      setModelsTestError("Network error");
+    } finally {
+      setTestingAllModels(false);
     }
   };
 
@@ -1015,7 +1061,8 @@ export default function ProviderDetailPage() {
                 handleDeleteAlias(model.alias);
               }
             }}
-            testStatus={modelTestResults[model.id]}
+            testStatus={modelTestResults[model.id]?.status}
+            testLatency={modelTestResults[model.id]?.latency}
             onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
             isTesting={testingModelIds.has(model.id)}
             isCustom
@@ -1040,7 +1087,8 @@ export default function ProviderDetailPage() {
               onCopy={copy}
               onSetAlias={(alias) => handleSetAlias(model.id, alias, providerStorageAlias)}
               onDeleteAlias={() => handleDeleteAlias(existingAlias)}
-              testStatus={modelTestResults[model.id]}
+              testStatus={modelTestResults[model.id]?.status}
+              testLatency={modelTestResults[model.id]?.latency}
               onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
               isTesting={testingModelIds.has(model.id)}
               isFree={model.isFree}
@@ -1058,6 +1106,20 @@ export default function ProviderDetailPage() {
           <span className="material-symbols-outlined text-sm">add</span>
           Add Model
         </button>
+
+        {/* Test All Models button */}
+        {connections.length > 0 && (
+          <button
+            onClick={handleTestAllModels}
+            disabled={testingAllModels}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-green-500/40 px-3 py-2 text-xs text-green-600 dark:text-green-400 transition-colors hover:border-green-500 hover:bg-green-500/5 sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <span className="material-symbols-outlined text-sm" style={testingAllModels ? { animation: "spin 1s linear infinite" } : undefined}>
+              {testingAllModels ? "progress_activity" : "check_circle"}
+            </span>
+            {testingAllModels ? "Testing..." : "Test All"}
+          </button>
+        )}
 
         {/* Import Qoder models button — only show for qoder provider */}
         {providerId === "qoder" && connections.some((conn) => conn.isActive !== false) && (
