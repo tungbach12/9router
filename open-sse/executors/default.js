@@ -188,9 +188,12 @@ export class DefaultExecutor extends BaseExecutor {
         delete headers["Anthropic-Dangerous-Direct-Browser-Access"];
         delete headers["x-app"];
         delete headers["X-App"];
-        // Strip Claude Code user-agent — third-party gateways may WAF-block it
-        delete headers["user-agent"];
-        delete headers["User-Agent"];
+        // Strip Claude Code user-agent only when providerSpecificData.stripUserAgent is set
+        // (some WAFs block it, but most third-party gateways NEED it to pass auth)
+        if (credentials?.providerSpecificData?.stripUserAgent) {
+          delete headers["user-agent"];
+          delete headers["User-Agent"];
+        }
         // Strip claude-code-20250219 from Anthropic-Beta / anthropic-beta
         for (const betaKey of ["anthropic-beta", "Anthropic-Beta"]) {
           if (headers[betaKey]) {
