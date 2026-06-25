@@ -179,13 +179,18 @@ export class DefaultExecutor extends BaseExecutor {
         // Some third-party Anthropic-compatible gateways require Bearer auth in
         // addition to x-api-key. Send both (x-api-key already set above) so
         // gateways that read either header succeed.
-        if (credentials.apiKey && !headers["Authorization"]) {
+        // Skip if providerSpecificData.skipBearerAuth is set (some WAFs flag dual auth).
+        const skipBearer = credentials?.providerSpecificData?.skipBearerAuth;
+        if (credentials.apiKey && !headers["Authorization"] && !skipBearer) {
           headers["Authorization"] = `Bearer ${credentials.apiKey}`;
         }
         delete headers["anthropic-dangerous-direct-browser-access"];
         delete headers["Anthropic-Dangerous-Direct-Browser-Access"];
         delete headers["x-app"];
         delete headers["X-App"];
+        // Strip Claude Code user-agent — third-party gateways may WAF-block it
+        delete headers["user-agent"];
+        delete headers["User-Agent"];
         // Strip claude-code-20250219 from Anthropic-Beta / anthropic-beta
         for (const betaKey of ["anthropic-beta", "Anthropic-Beta"]) {
           if (headers[betaKey]) {
