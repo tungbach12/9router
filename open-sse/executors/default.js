@@ -240,7 +240,9 @@ export class DefaultExecutor extends BaseExecutor {
       const safeHeaders = { ...headers };
       if (safeHeaders["x-api-key"]) safeHeaders["x-api-key"] = safeHeaders["x-api-key"].slice(0, 8) + "...";
       if (safeHeaders["Authorization"]) safeHeaders["Authorization"] = safeHeaders["Authorization"].slice(0, 20) + "...";
-      console.log(`[AUTH_DEBUG] [${this.provider}] Final headers: ${JSON.stringify(safeHeaders)}`);
+      if (process.env.LOG_LEVEL?.toUpperCase() === "DEBUG") {
+        console.log(`[AUTH_DEBUG] [${this.provider}] Final headers: ${JSON.stringify(safeHeaders)}`);
+      }
     }
 
     return headers;

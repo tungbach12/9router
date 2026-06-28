@@ -18,6 +18,7 @@ import { handleForcedSSEToJson } from "./chatCore/sseToJsonHandler.js";
 import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
 import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/streamingHandler.js";
 import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
+import { logRequest, logError } from "../utils/compactLog.js";
 
 import { cacheClaudeHeaders } from "../utils/claudeHeaderCache.js";
 import { injectCaveman } from "../rtk/caveman.js";
@@ -131,7 +132,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     // Normalize newer Cowork/CC beta shapes (adaptive thinking, mid-conversation system) the API rejects
     if (clientTool === "claude") normalizeClaudePassthrough(translatedBody, upstreamModel);
   } else {
-    console.log(`[TOOLDEBUG] provider=${provider} sourceFormat=${sourceFormat} targetFormat=${targetFormat} hasTools=${!!body.tools} toolCount=${body.tools?.length}`);
+    if (process.env.LOG_LEVEL?.toUpperCase() === "DEBUG") {
+      console.log(`[TOOLDEBUG] provider=${provider} sourceFormat=${sourceFormat} targetFormat=${targetFormat} hasTools=${!!body.tools} toolCount=${body.tools?.length}`);
+    }
     translatedBody = translateRequest(sourceFormat, targetFormat, upstreamModel, body, stream, credentials, provider, reqLogger, stripList, connectionId, clientTool);
     if (!translatedBody) {
       trackPendingRequest(model, provider, connectionId, false, true);
@@ -140,7 +143,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     toolNameMap = translatedBody._toolNameMap;
     delete translatedBody._toolNameMap;
     translatedBody.model = upstreamModel;
-    console.log(`[TOOLDEBUG] translated hasTools=${!!translatedBody.tools} toolCount=${translatedBody.tools?.length}`);
+    if (process.env.LOG_LEVEL?.toUpperCase() === "DEBUG") {
+      console.log(`[TOOLDEBUG] translated hasTools=${!!translatedBody.tools} toolCount=${translatedBody.tools?.length}`);
+    }
   }
 
   // Token savers: applied at the final body just before dispatch
@@ -180,7 +185,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   appendRequestLog({ model, provider, connectionId, status: "PENDING" }).catch(() => { });
 
   const msgCount = translatedBody.messages?.length || translatedBody.input?.length || translatedBody.contents?.length || translatedBody.request?.contents?.length || 0;
-  log?.debug?.("REQUEST", `${provider.toUpperCase()} | ${model} | ${msgCount} msgs`);
+  const toolCount = translatedBody.tools?.length || 0;
+  logRequest(alias, model, msgCount, toolCount, apiKey);
 
   const streamController = createStreamController({
     onDisconnect: (reason) => {
@@ -250,8 +256,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       streamController.handleError(error);
       return createErrorResult(499, "Request aborted");
     }
+    logError(provider, model, HTTP_STATUS.BAD_GATEWAY, error.message, {
+      url: providerUrl,
+      bodySize: finalBody ? JSON.stringify(finalBody).length : 0,
+    });
     const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
-    console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
   }
 
@@ -259,7 +268,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (!executor.noAuth && (providerResponse.status === HTTP_STATUS.UNAUTHORIZED || providerResponse.status === HTTP_STATUS.FORBIDDEN)) {
     const hasRefreshToken = credentials?.refreshToken && typeof credentials.refreshToken === "string";
     if (!hasRefreshToken) {
-      log?.debug?.("TOKEN", `${provider.toUpperCase()} | ${providerResponse.status} but no refresh token, skipping refresh`);
+      log?.debug?.("TOKEN", `${provider} | ${providerResponse.status} no refresh token`);
     }
     if (hasRefreshToken) try {
       const newCredentials = await refreshWithRetry(() => executor.refreshCredentials(credentials, log), 3, log);
@@ -297,7 +306,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     })).catch(() => { });
 
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
-    console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
+    logError(provider, model, statusCode, message, {
+      url: providerUrl,
+      bodySize: finalBody ? JSON.stringify(finalBody).length : 0,
+      response: providerResponse?.headers?.get?.("content-type")?.includes("json") ? message : undefined,
+    });
     reqLogger.logError(new Error(message), finalBody || translatedBody);
     return createErrorResult(statusCode, errMsg, resetsAtMs);
   }

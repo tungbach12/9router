@@ -217,7 +217,12 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   }
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
-  const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
+  let reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
+  // Clean up prefix of type "[status]: " or "[code]: "
+  const prefixMatch = reason.match(/^\[([^\]]+)\]:\s*/);
+  if (prefixMatch) {
+    reason = reason.slice(prefixMatch[0].length);
+  }
   const lockUpdate = buildModelLockUpdate(model, cooldownMs);
 
   await updateProviderConnection(connectionId, {

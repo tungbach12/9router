@@ -139,7 +139,7 @@ export class BaseExecutor {
       try {
         const bodyStr = JSON.stringify(transformedBody);
         const fetchT0 = Date.now();
-        dbg("FETCH", `${this.provider.toUpperCase()} → ${url} | body=${bodyStr.length}B | connectTimeout=${timeoutMs}ms`);
+        dbg("FETCH", `${this.provider} → ${url} | ${bodyStr.length}B`);
         const response = await proxyAwareFetch(url, {
           method: "POST",
           headers,
@@ -149,7 +149,7 @@ export class BaseExecutor {
         clearTimeout(connectTimer);
         const ct = response.headers?.get?.("content-type") || "";
         const cl = response.headers?.get?.("content-length") || "?";
-        dbg("FETCH", `${this.provider.toUpperCase()} ← ${response.status} | ttft=${Date.now() - fetchT0}ms | ct=${ct} | cl=${cl}`);
+        dbg("FETCH", `${this.provider} ← ${response.status} | ttft=${Date.now() - fetchT0}ms | ct=${ct} | cl=${cl}`);
 
         // Debug: dump first 500 bytes of non-JSON error responses for diagnosis
         if (!response.ok && ct && !ct.includes("json") && !ct.includes("text/event-stream") && !ct.includes("text/plain")) {

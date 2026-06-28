@@ -242,9 +242,30 @@ const STRATEGY_OPTIONS = [
 
 function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResults, setTestResults] = useState(null);
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
   const isFusion = current === "fusion";
+
+  const handleTestAll = async () => {
+    if (testing || combo.models.length === 0) return;
+    setTesting(true);
+    setTestResults(null);
+    try {
+      const res = await fetch("/api/combos/test-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ models: combo.models }),
+      });
+      const data = await res.json();
+      setTestResults(data.results || []);
+    } catch (e) {
+      setTestResults([{ model: "?", ok: false, error: e.message, latencyMs: 0 }]);
+    } finally {
+      setTesting(false);
+    }
+  };
 
   return (
     <Card padding="sm" className="group">
@@ -308,7 +329,16 @@ function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-1 sm:flex">
+          <div className="grid grid-cols-4 gap-1 sm:flex">
+            <button
+              onClick={handleTestAll}
+              disabled={testing || combo.models.length === 0}
+              className={`flex flex-col items-center rounded px-2 py-1 transition-colors ${testing ? "text-primary animate-pulse" : "text-text-muted hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"}`}
+              title="Test all models"
+            >
+              <span className="material-symbols-outlined text-[18px]">{testing ? "hourglass_top" : "play_arrow"}</span>
+              <span className="text-[10px] leading-tight">{testing ? "Testing" : "Test"}</span>
+            </button>
             <button
               onClick={(e) => { e.stopPropagation(); onCopy(combo.name, `combo-${combo.id}`); }}
               className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
@@ -338,6 +368,34 @@ function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy
           </div>
         </div>
       </div>
+
+      {/* Test Results */}
+      {testResults && (
+        <div className="mt-2 flex flex-col gap-1 rounded-lg border border-black/5 dark:border-white/5 bg-black/[0.02] dark:bg-white/[0.02] p-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium text-text-muted">Test Results</span>
+            <button onClick={() => setTestResults(null)} className="text-text-muted hover:text-text-main">
+              <span className="material-symbols-outlined text-[14px]">close</span>
+            </button>
+          </div>
+          <div className="flex flex-col gap-0.5">
+            {testResults.map((r, i) => (
+              <div key={i} className="flex items-center gap-2 text-[11px] font-mono">
+                <span className={r.ok ? "text-green-500" : "text-red-500"}>
+                  {r.ok ? "\u2713" : "\u2717"}
+                </span>
+                <span className="truncate text-text-main flex-1 min-w-0" title={r.model}>
+                  {r.model}
+                </span>
+                <span className="text-text-muted shrink-0">{r.latencyMs}ms</span>
+                {!r.ok && r.error && (
+                  <span className="text-red-400 truncate max-w-[200px]" title={r.error}>{r.error}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Judge model picker (single-select; combo members make natural judges too) */}
       <ModelSelectModal
