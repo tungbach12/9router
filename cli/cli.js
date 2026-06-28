@@ -501,7 +501,6 @@ if (useDevMode) {
   const possibleRoots = [
     path.join(__dirname, ".."),
     path.resolve(__dirname, "../.."),
-    "E:\\githubProjects\\9router",
   ];
   let projectRoot = null;
   for (const root of possibleRoots) {

@@ -19,6 +19,7 @@ import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
 import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/streamingHandler.js";
 import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
 import { logRequest, logError } from "../utils/compactLog.js";
+import { dedupeTools } from "../utils/toolDeduper.js";
 
 import { cacheClaudeHeaders } from "../utils/claudeHeaderCache.js";
 import { injectCaveman } from "../rtk/caveman.js";
@@ -145,6 +146,15 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     translatedBody.model = upstreamModel;
     if (process.env.LOG_LEVEL?.toUpperCase() === "DEBUG") {
       console.log(`[TOOLDEBUG] translated hasTools=${!!translatedBody.tools} toolCount=${translatedBody.tools?.length}`);
+    }
+  }
+
+  // Dedupe duplicate built-in tools when equivalent MCP tools are present (Claude clients only).
+  if (clientTool === "claude" && Array.isArray(translatedBody.tools)) {
+    const { tools: deduped, stripped } = dedupeTools(translatedBody.tools);
+    if (stripped.length > 0) {
+      translatedBody.tools = deduped;
+      log?.debug?.("TOOLDEDUP", `stripped ${stripped.length}: ${stripped.slice(0, 3).join(", ")}${stripped.length > 3 ? "..." : ""}`);
     }
   }
 
