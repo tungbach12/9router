@@ -4,6 +4,7 @@ import { adjustMaxTokens } from "../formats/maxTokens.js";
 import { encodeDataUri } from "../concerns/image.js";
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
 import { collapseTextParts } from "../concerns/message.js";
+import { cleanJSONSchemaForAntigravity } from "../formats/gemini.js";
 
 function stripAnthropicBillingHeader(text) {
   if (typeof text !== "string") return "";
@@ -65,14 +66,18 @@ export function claudeToOpenAIRequest(model, body, stream) {
 
   // Tools
   if (body.tools && Array.isArray(body.tools)) {
-    result.tools = body.tools.map(tool => ({
-      type: OPENAI_BLOCK.FUNCTION,
-      function: {
-        name: tool.name,
-        description: String(tool.description || ""),
-        parameters: tool.input_schema || { type: "object", properties: {} }
-      }
-    }));
+    result.tools = body.tools.map(tool => {
+      const rawSchema = tool.input_schema || tool.function?.parameters || { type: "object", properties: {} };
+      const cleanedSchema = cleanJSONSchemaForAntigravity(structuredClone(rawSchema));
+      return {
+        type: OPENAI_BLOCK.FUNCTION,
+        function: {
+          name: tool.name,
+          description: String(tool.description || ""),
+          parameters: cleanedSchema
+        }
+      };
+    });
   }
 
   // Tool choice
