@@ -21,6 +21,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [anthropicOptions, setAnthropicOptions] = useState({ spoofClaudeHeaders: false, stripUserAgent: false, skipBearerAuth: false });
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [validating, setValidating] = useState(false);
@@ -45,6 +46,13 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       }
       if (connection.provider === "cloudflare-ai" && connection.providerSpecificData) {
         setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
+      }
+      if (isAnthropicCompatibleProvider(connection.provider) && connection.providerSpecificData) {
+        setAnthropicOptions({
+          spoofClaudeHeaders: connection.providerSpecificData.spoofClaudeHeaders || false,
+          stripUserAgent: connection.providerSpecificData.stripUserAgent || false,
+          skipBearerAuth: connection.providerSpecificData.skipBearerAuth || false,
+        });
       }
       setTestResult(null);
       setValidationResult(null);
@@ -150,6 +158,14 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (isCloudflareAi) {
         updates.providerSpecificData = { accountId: cloudflareData.accountId };
       }
+      if (isAnthropicCompatibleProvider(connection.provider)) {
+        updates.providerSpecificData = {
+          ...(connection.providerSpecificData || {}),
+          spoofClaudeHeaders: anthropicOptions.spoofClaudeHeaders,
+          stripUserAgent: anthropicOptions.stripUserAgent,
+          skipBearerAuth: anthropicOptions.skipBearerAuth,
+        };
+      }
       
       await onSave(updates);
     } finally {
@@ -239,6 +255,41 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
                 placeholder="Organization ID"
                 hint="Required for billing"
               />
+            </div>
+          </div>
+        )}
+
+        {isAnthropicCompatibleProvider(connection.provider) && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <h3 className="font-semibold mb-3 text-sm">Anthropic-Compatible Headers</h3>
+            <div className="flex flex-col gap-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={anthropicOptions.spoofClaudeHeaders}
+                  onChange={(e) => setAnthropicOptions({ ...anthropicOptions, spoofClaudeHeaders: e.target.checked })}
+                  className="w-4 h-4 rounded border-accent/30"
+                />
+                <span className="text-sm">Forward Claude Code identity headers (spoofClaudeHeaders)</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={anthropicOptions.stripUserAgent}
+                  onChange={(e) => setAnthropicOptions({ ...anthropicOptions, stripUserAgent: e.target.checked })}
+                  className="w-4 h-4 rounded border-accent/30"
+                />
+                <span className="text-sm">Strip User-Agent header (stripUserAgent)</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={anthropicOptions.skipBearerAuth}
+                  onChange={(e) => setAnthropicOptions({ ...anthropicOptions, skipBearerAuth: e.target.checked })}
+                  className="w-4 h-4 rounded border-accent/30"
+                />
+                <span className="text-sm">Skip Bearer auth (skipBearerAuth)</span>
+              </label>
             </div>
           </div>
         )}

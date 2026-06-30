@@ -37,6 +37,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [anthropicOptions, setAnthropicOptions] = useState({ spoofClaudeHeaders: false, stripUserAgent: false, skipBearerAuth: false });
   const [region, setRegion] = useState(defaultRegion);
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
@@ -62,6 +63,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     }
     if (providerRegions && region) {
       return { region };
+    }
+    if (isAnthropic && (anthropicOptions.spoofClaudeHeaders || anthropicOptions.stripUserAgent || anthropicOptions.skipBearerAuth)) {
+      return { ...anthropicOptions };
     }
     return undefined;
   };
@@ -323,6 +327,41 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
                 onChange={(e) => setAzureData({ ...azureData, organization: e.target.value })}
                 placeholder="Organization ID"
               />
+            </div>
+          </div>
+        )}
+
+        {isAnthropic && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <h3 className="font-semibold mb-3 text-sm">Header Options</h3>
+            <div className="flex flex-col gap-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={anthropicOptions.spoofClaudeHeaders}
+                  onChange={(e) => setAnthropicOptions({ ...anthropicOptions, spoofClaudeHeaders: e.target.checked })}
+                  className="w-4 h-4 rounded border-accent/30"
+                />
+                <span className="text-sm">Forward Claude Code identity headers (spoofClaudeHeaders)</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={anthropicOptions.stripUserAgent}
+                  onChange={(e) => setAnthropicOptions({ ...anthropicOptions, stripUserAgent: e.target.checked })}
+                  className="w-4 h-4 rounded border-accent/30"
+                />
+                <span className="text-sm">Strip User-Agent header (stripUserAgent)</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={anthropicOptions.skipBearerAuth}
+                  onChange={(e) => setAnthropicOptions({ ...anthropicOptions, skipBearerAuth: e.target.checked })}
+                  className="w-4 h-4 rounded border-accent/30"
+                />
+                <span className="text-sm">Skip Bearer auth (skipBearerAuth)</span>
+              </label>
             </div>
           </div>
         )}
