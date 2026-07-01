@@ -56,13 +56,10 @@ export function filterToOpenAIFormat(body) {
     return msg;
   });
   
-  // Convert tool role messages to user role (some providers reject role: "tool")
-  body.messages = body.messages.map(msg =>
-    msg.role === ROLE.TOOL ? { ...msg, role: ROLE.USER } : msg
-  );
-
-  // Filter out messages with only empty text (but NEVER filter assistant with tool_calls)
+  // Filter out messages with only empty text (but NEVER filter tool messages)
   body.messages = body.messages.filter(msg => {
+    // Always keep tool messages
+    if (msg.role === ROLE.TOOL) return true;
     // Always keep assistant messages with tool_calls
     if (msg.role === ROLE.ASSISTANT && msg.tool_calls) return true;
     
