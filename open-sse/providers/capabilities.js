@@ -187,6 +187,8 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*kimi*",          caps: { reasoning: true, thinkingFormat: "kimi", contextWindow: 262144 } },
 
   // ── GLM / Z.ai (thinking.enabled; disable via enable_thinking:false) ─
+  // GLM-5.2 is multimodal (image+text). Earlier GLM versions are text-only.
+  { pattern: "*glm-5.2*",       caps: { vision: true, reasoning: true, thinkingFormat: "zai", contextWindow: 200000, maxOutput: 128000 } },
   { pattern: "*glm-5*",         caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 200000, maxOutput: 128000 } },
   { pattern: "*glm-4.7*",       caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 200000, maxOutput: 128000 } },
   { pattern: "*glm-4*",         caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 200000 } },
