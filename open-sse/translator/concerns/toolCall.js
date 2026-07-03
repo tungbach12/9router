@@ -119,7 +119,9 @@ export function hasToolResults(msg, toolCallIds) {
   return false;
 }
 
-// Fix missing tool responses - insert empty tool_result if assistant has tool_use but next message has no tool_result
+// Fix missing tool responses - insert empty tool_result if assistant has tool_use/tool_calls
+// but not all IDs have a corresponding tool response in consecutive following messages.
+// Handles both OpenAI (role: "tool") and Claude (tool_result blocks in content) formats.
 export function fixMissingToolResponses(body) {
   if (!body.messages || !Array.isArray(body.messages)) return body;
 
@@ -127,7 +129,6 @@ export function fixMissingToolResponses(body) {
 
   for (let i = 0; i < body.messages.length; i++) {
     const msg = body.messages[i];
-    const nextMsg = body.messages[i + 1];
 
     newMessages.push(msg);
 
@@ -135,11 +136,34 @@ export function fixMissingToolResponses(body) {
     const toolCallIds = getToolCallIds(msg);
     if (toolCallIds.length === 0) continue;
 
-    // Check if next message has tool_result
-    if (nextMsg && !hasToolResults(nextMsg, toolCallIds)) {
-      // Insert tool responses for each tool_call
-      for (const id of toolCallIds) {
-        // OpenAI format: role = "tool"
+    // Collect all responded IDs from consecutive tool/result messages
+    const respondedIds = new Set();
+    let j = i + 1;
+    while (j < body.messages.length) {
+      const next = body.messages[j];
+      // OpenAI format: role = "tool" with tool_call_id
+      if (next.role === "tool" && next.tool_call_id && toolCallIds.includes(next.tool_call_id)) {
+        respondedIds.add(next.tool_call_id);
+        j++;
+        continue;
+      }
+      // Claude format: tool_result blocks in user message content
+      if (next.role === "user" && Array.isArray(next.content)) {
+        let found = false;
+        for (const block of next.content) {
+          if (block.type === "tool_result" && toolCallIds.includes(block.tool_use_id)) {
+            respondedIds.add(block.tool_use_id);
+            found = true;
+          }
+        }
+        if (found) { j++; continue; }
+      }
+      break;
+    }
+
+    // Insert empty responses for missing tool calls
+    for (const id of toolCallIds) {
+      if (!respondedIds.has(id)) {
         newMessages.push({
           role: "tool",
           tool_call_id: id,
