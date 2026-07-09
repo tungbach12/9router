@@ -2,6 +2,24 @@ import REGISTRY from "../providers/registry/index.js";
 
 // Alias→id derived from registry single-source: id→id, alias→id, aliases[]→id.
 // Media-only providers without a registry transport entry keep explicit aliases here.
+// Build alias map from registry first
+const ALIAS_TO_PROVIDER_ID = {};
+for (const entry of REGISTRY) {
+  ALIAS_TO_PROVIDER_ID[entry.id] = entry.id;
+  if (entry.alias) ALIAS_TO_PROVIDER_ID[entry.alias] = entry.id;
+  for (const a of entry.aliases || []) ALIAS_TO_PROVIDER_ID[a] = entry.id;
+}
+
+// NVIDIA model IDs use original provider prefixes - map to nvidia provider
+// These override registry entries to enable routing "deepseek-ai/..." to nvidia
+const NVIDIA_PREFIX_ALIASES = {
+  "deepseek-ai": "nvidia",
+  "minimaxai": "nvidia",
+  "z-ai": "nvidia",
+};
+Object.assign(ALIAS_TO_PROVIDER_ID, NVIDIA_PREFIX_ALIASES);
+
+// Media-only providers without a registry transport entry keep explicit aliases here.
 const MEDIA_ONLY_ALIASES = {
   el: "elevenlabs",
   jina: "jina-ai",
@@ -9,13 +27,7 @@ const MEDIA_ONLY_ALIASES = {
   polly: "aws-polly",
   "aws-polly": "aws-polly",
 };
-
-const ALIAS_TO_PROVIDER_ID = { ...MEDIA_ONLY_ALIASES };
-for (const entry of REGISTRY) {
-  ALIAS_TO_PROVIDER_ID[entry.id] = entry.id;
-  if (entry.alias) ALIAS_TO_PROVIDER_ID[entry.alias] = entry.id;
-  for (const a of entry.aliases || []) ALIAS_TO_PROVIDER_ID[a] = entry.id;
-}
+Object.assign(ALIAS_TO_PROVIDER_ID, MEDIA_ONLY_ALIASES);
 
 /**
  * Resolve provider alias to provider ID

@@ -19,7 +19,11 @@ export default {
     baseUrl: "https://integrate.api.nvidia.com/v1/chat/completions",
     validateUrl: "https://integrate.api.nvidia.com/v1/models",
   },
+  // NVIDIA DeepSeek uses chat_template_kwargs for thinking (not standard OpenAI reasoning_effort)
+  thinkingFormat: "nvidia-openai",
   models: [
+    { id: "deepseek-ai/deepseek-v4-pro", name: "DeepSeek V4 Pro" },
+    { id: "deepseek-ai/deepseek-v4-flash", name: "DeepSeek V4 Flash" },
     { id: "minimaxai/minimax-m2.7", name: "Minimax M2.7" },
     { id: "z-ai/glm4.7", name: "GLM 4.7" },
     { id: "nvidia/nv-embedqa-e5-v5", name: "NV EmbedQA E5 v5", kind: "embedding" },

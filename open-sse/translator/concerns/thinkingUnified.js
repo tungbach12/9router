@@ -18,6 +18,7 @@ const FORMAT_TO_NATIVE = {
   vertex: "gemini-budget",
   antigravity: "gemini-budget",
   kiro: "kiro",
+  "nvidia-openai": "nvidia-openai", // NVIDIA DeepSeek uses chat_template_kwargs
 };
 
 // Parse model-name suffix "model(value)" → { cleanModel, override }.
@@ -236,6 +237,17 @@ function applyFormat(fmt, body, cfg, caps) {
     case "kiro":
       // Kiro thinking handled via system-tag injection in openai-to-kiro.js; no body field here.
       break;
+    case "nvidia-openai": {
+      // NVIDIA DeepSeek uses chat_template_kwargs for thinking configuration
+      if (none && canDisable) {
+        body.chat_template_kwargs = { thinking: false };
+        break;
+      }
+      const level = toLevel(eff);
+      const reasoningEffort = level === "xhigh" || level === "max" ? "max" : (level || "high");
+      body.chat_template_kwargs = { thinking: true, reasoning_effort: reasoningEffort };
+      break;
+    }
     default:
       break;
   }
