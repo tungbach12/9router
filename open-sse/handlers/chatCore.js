@@ -1,5 +1,6 @@
 import { detectFormat, getTargetFormat, resolveTransport } from "../services/provider.js";
 import { translateRequest } from "../translator/index.js";
+import { stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
 import { FORMATS } from "../translator/formats.js";
 import { normalizeClaudePassthrough } from "../translator/formats/claude.js";
 import { COLORS } from "../utils/stream.js";
@@ -25,7 +26,7 @@ import { cacheClaudeHeaders } from "../utils/claudeHeaderCache.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
-import { compressWithHeadroom, formatHeadroomLog } from "../rtk/headroom.js";
+import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
@@ -92,7 +93,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const acceptHeader = clientRawRequest?.headers?.accept || "";
   const clientPrefersJson = acceptHeader.includes("application/json");
   const clientPrefersSSE = acceptHeader.includes("text/event-stream");
-  if (clientPrefersJson && !clientPrefersSSE && body.stream !== true) {
+  if (clientPrefersJson && !clientPrefersSSE && body.stream !== true && !providerRequiresStreaming) {
     stream = false;
   }
 
@@ -129,9 +130,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   let toolNameMap;
   if (passthrough) {
     log?.debug?.("PASSTHROUGH", `${clientTool} → ${provider} | native lossless`);
-    translatedBody = { ...body, model: upstreamModel };
+    translatedBody = { ...body, model: stripThinkingSuffix(upstreamModel) };
     // Normalize newer Cowork/CC beta shapes (adaptive thinking, mid-conversation system) the API rejects
-    if (clientTool === "claude") normalizeClaudePassthrough(translatedBody, upstreamModel);
+    if (clientTool === "claude") normalizeClaudePassthrough(translatedBody, translatedBody.model);
   } else {
     if (process.env.LOG_LEVEL?.toUpperCase() === "DEBUG") {
       console.log(`[TOOLDEBUG] provider=${provider} sourceFormat=${sourceFormat} targetFormat=${targetFormat} hasTools=${!!body.tools} toolCount=${body.tools?.length}`);
@@ -143,7 +144,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     }
     toolNameMap = translatedBody._toolNameMap;
     delete translatedBody._toolNameMap;
-    translatedBody.model = upstreamModel;
+    translatedBody.model = stripThinkingSuffix(upstreamModel);
     if (process.env.LOG_LEVEL?.toUpperCase() === "DEBUG") {
       console.log(`[TOOLDEBUG] translated hasTools=${!!translatedBody.tools} toolCount=${translatedBody.tools?.length}`);
     }
@@ -174,9 +175,16 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (rtkLine) console.log(rtkLine);
 
   // Headroom: optional external proxy compression; fail open if proxy is absent.
-  const headroomStats = await compressWithHeadroom(translatedBody, { enabled: headroomEnabled, url: headroomUrl, model: upstreamModel, format: finalFormat, compressUserMessages: headroomCompressUserMessages });
+  const headroomDiagnostics = {};
+  const headroomStats = await compressWithHeadroom(translatedBody, { enabled: headroomEnabled, url: headroomUrl, model: upstreamModel, format: finalFormat, compressUserMessages: headroomCompressUserMessages, diagnostics: headroomDiagnostics });
   const headroomLine = formatHeadroomLog(headroomStats);
-  if (headroomLine) log?.info?.("HEADROOM", headroomLine);
+  const headroomSizeLine = formatHeadroomSizeLog(headroomDiagnostics);
+  if (headroomLine) {
+    log?.info?.("HEADROOM", `${headroomLine}${headroomSizeLine ? ` | ${headroomSizeLine}` : ""}`);
+    if (isHeadroomPhantomSavings(headroomStats, headroomDiagnostics)) {
+      log?.warn?.("HEADROOM", `reported token delta, but outbound JSON shrank <5%; provider may bill near-original payload | ${headroomSizeLine}`);
+    }
+  } else if (headroomEnabled) log?.warn?.("HEADROOM", `skipped: ${headroomDiagnostics.reason || "compression unavailable"}${headroomDiagnostics.endpoint ? ` (${headroomDiagnostics.endpoint})` : ""}`);
 
   // Caveman: inject terse-style system prompt
   if (cavemanEnabled && cavemanLevel) {

@@ -249,10 +249,10 @@ export default function ModelSelectModal({
             value: `${nodePrefix}/${fullModel.replace(`${providerId}/`, "")}`,
           }));
 
-        // Also include custom models registered via the provider detail page (Add/Import buttons).
-        const aliasIds = new Set(aliasModels.map((m) => m.id));
-        const customRegisteredModels = customModels
-          .filter((m) => m.providerAlias === providerId && !aliasIds.has(m.id))
+        // Merge custom models registered via /api/models/custom for this provider
+        // providerAlias in DB uses the raw providerId, not the display prefix
+        const registeredCustom = customModels
+          .filter((m) => m.providerAlias === providerId)
           .map((m) => ({
             id: m.id,
             name: m.name || m.id,
@@ -260,11 +260,14 @@ export default function ModelSelectModal({
             isCustom: true,
           }));
 
-        const nodeModels = [...aliasModels, ...customRegisteredModels];
+
+        const nodeModels = [...aliasModels];
+        const seen = new Set(nodeModels.map((m) => m.value));
+        const mergedModels = [...nodeModels, ...registeredCustom.filter((m) => !seen.has(m.value))];
 
         // Always show compatible providers that are connected, even with no aliases.
         // When no aliases exist, show a placeholder so users know it's available.
-        const modelsToShow = nodeModels.length > 0 ? nodeModels : [{
+        const modelsToShow = mergedModels.length > 0 ? mergedModels : [{
           id: `__placeholder__${providerId}`,
           name: `${nodePrefix}/model-id`,
           value: `${nodePrefix}/model-id`,
@@ -277,7 +280,7 @@ export default function ModelSelectModal({
           color: providerInfo.color,
           models: modelsToShow,
           isCustom: true,
-          hasModels: nodeModels.length > 0,
+          hasModels: mergedModels.length > 0,
         };
       } else {
         const hardcodedModels = getModelsByProviderId(providerId);

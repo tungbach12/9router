@@ -5,8 +5,9 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal } from "@/shared/components";
-import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS, THINKING_CONFIG } from "@/shared/constants/providers";
+import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
+import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { translate } from "@/i18n/runtime";
@@ -22,6 +23,11 @@ import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
+
+const AUTO_PING_SETTINGS_KEYS = {
+  claude: "claudeAutoPing",
+  codex: "codexAutoPing",
+};
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -145,7 +151,21 @@ export default function ProviderDetailPage() {
   const hasDualAuthModes = !isCompatible && isOAuth && supportsApiKeyAuth;
   const oauthConnectionLabel = providerId === "xai" ? "Grok Build OAuth" : "OAuth";
   const apiKeyConnectionLabel = providerId === "xai" ? "xAI API Key" : "API Key";
-  const thinkingConfig = AI_PROVIDERS[providerId]?.thinkingConfig || THINKING_CONFIG.extended;
+  // Resolve suffix "(level)" for a model when a thinking level is picked and the model supports it.
+  const resolveThinkingSuffix = (modelId) => {
+    if (!thinkingMode || thinkingMode === "auto") return null;
+    const levels = getThinkingLevels(providerId, modelId);
+    return levels && levels.includes(thinkingMode) ? thinkingMode : null;
+  };
+  // Union of levels across this provider's reasoning models — drives the level picker options.
+  const providerThinkingLevels = (() => {
+    const set = new Set();
+    for (const m of models) {
+      const lv = getThinkingLevels(providerId, m.id);
+      if (lv) lv.forEach((l) => { if (l !== "none") set.add(l); });
+    }
+    return set.size ? ["auto", ...[...set]] : null;
+  })();
   
   const providerStorageAlias = isCompatible ? providerId : providerAlias;
   const providerDisplayAlias = isCompatible
@@ -274,7 +294,8 @@ export default function ProviderDetailPage() {
       // Load per-provider thinking config
       const thinkingCfg = (settingsData.providerThinking || {})[providerId] || {};
       setThinkingMode(thinkingCfg.mode || "auto");
-      const apCfg = settingsData.claudeAutoPing || {};
+      const autoPingSettingsKey = AUTO_PING_SETTINGS_KEYS[providerId];
+      const apCfg = autoPingSettingsKey ? settingsData[autoPingSettingsKey] || {} : {};
       setAutoPing({ enabled: apCfg.enabled === true, connections: apCfg.connections || {} });
       if (nodesRes.ok) {
         let node = (nodesData.nodes || []).find((entry) => entry.id === providerId) || null;
@@ -389,12 +410,15 @@ export default function ProviderDetailPage() {
   };
 
   const saveAutoPing = async (next) => {
+    const autoPingSettingsKey = AUTO_PING_SETTINGS_KEYS[providerId];
+    if (!autoPingSettingsKey) return;
+
     setAutoPing(next);
     try {
       await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ claudeAutoPing: next }),
+        body: JSON.stringify({ [autoPingSettingsKey]: next }),
       });
     } catch (error) {
       console.log("Error saving auto-ping config:", error);
@@ -638,11 +662,37 @@ export default function ProviderDetailPage() {
         try {
           const res = await fetch(`/api/providers/${id}`, { method: "DELETE" });
           if (res.ok) {
-            setConnections(connections.filter(c => c.id !== id));
+            setConnections(prev => prev.filter(c => c.id !== id));
           }
         } catch (error) {
           console.log("Error deleting connection:", error);
         }
+      }
+    });
+  };
+
+  const handleBulkDelete = () => {
+    const count = selectedConnectionIds.length;
+    if (count === 0) return;
+    setConfirmState({
+      title: `Delete ${count} Connection${count > 1 ? "s" : ""}`,
+      message: `Delete ${count} connection${count > 1 ? "s" : ""}? This cannot be undone.`,
+      onConfirm: async () => {
+        setConfirmState(null);
+        let failed = 0;
+        const idsToDelete = [...selectedConnectionIds];
+        for (const id of idsToDelete) {
+          try {
+            const res = await fetch(`/api/providers/${id}`, { method: "DELETE" });
+            if (!res.ok) failed += 1;
+          } catch (error) {
+            console.log("Error deleting connection:", error);
+            failed += 1;
+          }
+        }
+        setConnections(prev => prev.filter(c => !idsToDelete.includes(c.id)));
+        setSelectedConnectionIds([]);
+        if (failed > 0) alert(`Deleted ${idsToDelete.length - failed} connection(s), ${failed} failed.`);
       }
     });
   };
@@ -845,6 +895,14 @@ export default function ProviderDetailPage() {
       {connections
         .map((conn, index) => (
           <div key={conn.id} className="flex min-w-0 items-stretch">
+            <div className="flex shrink-0 items-center pl-1 sm:pl-2">
+              <input
+                type="checkbox"
+                checked={isSelected(conn.id)}
+                onChange={() => toggleSelectConnection(conn.id)}
+                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+              />
+            </div>
             <div className="flex-1 min-w-0">
               <ConnectionRow
                 connection={conn}
@@ -855,9 +913,10 @@ export default function ProviderDetailPage() {
                 onMoveUp={() => handleSwapPriority(index, index - 1)}
                 onMoveDown={() => handleSwapPriority(index, index + 1)}
                 onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
-                autoPing={providerId === "claude" && conn.authType === "oauth" ? {
+                autoPing={AUTO_PING_SETTINGS_KEYS[providerId] && conn.authType === "oauth" ? {
                   on: autoPing.connections[conn.id] === true,
                   onToggle: (on) => handleAutoPingConnection(conn.id, on),
+                  provider: providerId,
                 } : null}
                 onUpdateProxy={async (proxyPoolId) => {
                   try {
@@ -1068,6 +1127,7 @@ export default function ProviderDetailPage() {
             isCustom
             isFree={false}
             caps={getCaps(`${providerId}/${model.id}`)}
+            thinkingSuffix={resolveThinkingSuffix(model.id)}
           />
         ))}
 
@@ -1094,6 +1154,7 @@ export default function ProviderDetailPage() {
               isFree={model.isFree}
               onDisable={() => handleDisableModel(model.id)}
               caps={getCaps(`${providerId}/${model.id}`)}
+              thinkingSuffix={resolveThinkingSuffix(model.id)}
             />
           );
         })}
@@ -1381,6 +1442,16 @@ export default function ProviderDetailPage() {
               )}
               {connections.length > 0 && (
                 <>
+                  {selectedConnectionIds.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      icon="delete"
+                      onClick={handleBulkDelete}
+                    >
+                      Delete Selected ({selectedConnectionIds.length})
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="secondary"
@@ -1403,21 +1474,6 @@ export default function ProviderDetailPage() {
                   )}
                 </>
               )}
-              {/* Thinking config */}
-              {/* {thinkingConfig && (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-text-muted font-medium">Thinking</span>
-                  <select
-                    value={thinkingMode}
-                    onChange={(e) => handleThinkingModeChange(e.target.value)}
-                    className="text-xs px-2 py-1 border border-border rounded-md bg-background focus:outline-none focus:border-primary"
-                  >
-                    {thinkingConfig.options.map((opt) => (
-                      <option key={opt} value={opt}>{opt.charAt(0).toUpperCase() + opt.slice(1)}</option>
-                    ))}
-                  </select>
-                </div>
-              )} */}
               {/* Round Robin toggle */}
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-text-muted font-medium">Round Robin</span>
@@ -1508,6 +1564,19 @@ export default function ProviderDetailPage() {
                   </div>
                 </div>
               )}
+              {connections.length > 0 && (
+                <div className="mb-3 flex items-center gap-2 border-b border-black/[0.03] pb-2 dark:border-white/[0.03]">
+                  <label className="flex cursor-pointer items-center gap-1.5 text-xs text-text-muted hover:text-primary">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={toggleSelectAllConnections}
+                      className="h-3.5 w-3.5 rounded border-gray-300 text-primary focus:ring-primary"
+                    />
+                    Select All
+                  </label>
+                </div>
+              )}
               {connectionsList}
               {!isCompatible && (
                 <div className="mt-4 grid grid-cols-1 gap-2 sm:flex">
@@ -1575,9 +1644,23 @@ export default function ProviderDetailPage() {
       {/* Models */}
       <Card>
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg font-semibold">
-            {"Available Models"}
-          </h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-semibold">
+              {"Available Models"}
+            </h2>
+            {providerThinkingLevels && (
+              <select
+                value={thinkingMode}
+                onChange={(e) => handleThinkingModeChange(e.target.value)}
+                title="Appends (level) suffix to copied model names"
+                className="rounded-md border border-border bg-background px-2 py-1 text-xs focus:border-primary focus:outline-none"
+              >
+                {providerThinkingLevels.map((opt) => (
+                  <option key={opt} value={opt}>{`Thinking: ${opt.charAt(0).toUpperCase() + opt.slice(1)}`}</option>
+                ))}
+              </select>
+            )}
+          </div>
           {!isCompatible && (() => {
             const allIds = [
               ...models,
