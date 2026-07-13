@@ -443,6 +443,7 @@ export function createSSEStream(options = {}) {
           openAIResponsesDoneSent = true;
           streamDoneSent = true;
         }
+        }
 
         if (!hasValidUsage(state?.usage) && totalContentLength > 0) {
           state.usage = estimateUsage(body, totalContentLength, sourceFormat);
