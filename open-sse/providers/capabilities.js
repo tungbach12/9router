@@ -96,6 +96,12 @@ export const MODEL_CAPABILITIES = {
   // Qwen plain coder/text (no vision) — registry "vision-model" / "coder-model" aliases
   "vision-model":      { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000 },
   "coder-model":       { reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000 },
+
+  // MiniMax models served via OpenAI-compatible endpoints (zydit, etc.) need reasoning_effort,
+  // not native MiniMax `thinking.type = "adaptive"`. The pattern *minimax-m3* uses "minimax"
+  // format which these APIs reject — override to "openai" at the exact-model level.
+  "minimax-m3":        { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 512000, maxOutput: 48000 },
+  "minimax-m2.7":      { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 200000, maxOutput: 48000 },
 };
 
 /**
@@ -103,11 +109,11 @@ export const MODEL_CAPABILITIES = {
  */
 export const PROVIDER_CAPABILITIES = {
   // NVIDIA NIM is OpenAI-compatible → rejects MiniMax/GLM native `thinking` field.
-  // Force openai reasoning_effort format for its reasoning models. #issue
+  // Use openai reasoning_effort for DeepSeek; nvidia-glm for GLM (enable_thinking); nvidia-minimax for MiniMax (thinking_mode). #issue
   "nvidia": {
-    "minimaxai/minimax-m2.7": { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 200000, maxOutput: 131072 },
-    "minimaxai/minimax-m3": { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 512000, maxOutput: 131072 },
-    "z-ai/glm-5.2": { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 128000 },
+    "minimaxai/minimax-m2.7": { reasoning: true, thinkingFormat: "nvidia-minimax", thinkingCanDisable: false, contextWindow: 200000, maxOutput: 131072 },
+    "minimaxai/minimax-m3": { vision: true, reasoning: true, thinkingFormat: "nvidia-minimax", thinkingCanDisable: false, contextWindow: 512000, maxOutput: 131072 },
+    "z-ai/glm-5.2": { reasoning: true, thinkingFormat: "nvidia-glm", contextWindow: 200000, maxOutput: 128000 },
     "deepseek-ai/deepseek-v4-pro": { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 65536 },
     "deepseek-ai/deepseek-v4-flash": { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 65536 },
   },

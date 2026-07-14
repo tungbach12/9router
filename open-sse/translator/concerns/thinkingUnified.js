@@ -19,6 +19,8 @@ const FORMAT_TO_NATIVE = {
   antigravity: "gemini-budget",
   kiro: "kiro",
   "nvidia-openai": "nvidia-openai", // NVIDIA DeepSeek uses chat_template_kwargs
+  "nvidia-minimax": "nvidia-minimax", // NVIDIA MiniMax uses chat_template_kwargs.thinking_mode
+  "nvidia-glm": "nvidia-glm", // NVIDIA GLM-5.2 uses chat_template_kwargs.enable_thinking
 };
 
 // Strip a trailing thinking suffix "model(value)" → "model" (no-op when absent).
@@ -267,6 +269,24 @@ function applyFormat(fmt, body, cfg, caps) {
       const level = toLevel(eff);
       const reasoningEffort = level === "xhigh" || level === "max" ? "max" : (level || "high");
       body.chat_template_kwargs = { thinking: true, reasoning_effort: reasoningEffort };
+      break;
+    }
+    case "nvidia-minimax": {
+      // NVIDIA MiniMax uses chat_template_kwargs.thinking_mode (enabled/disabled string)
+      if (none && canDisable) {
+        body.chat_template_kwargs = { thinking_mode: "disabled" };
+        break;
+      }
+      body.chat_template_kwargs = { thinking_mode: "enabled" };
+      break;
+    }
+    case "nvidia-glm": {
+      // NVIDIA GLM-5.2 uses chat_template_kwargs.enable_thinking (bool) + clear_thinking: false
+      if (none && canDisable) {
+        body.chat_template_kwargs = { enable_thinking: false, clear_thinking: false };
+        break;
+      }
+      body.chat_template_kwargs = { enable_thinking: true, clear_thinking: false };
       break;
     }
     default:
