@@ -8,28 +8,21 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
     steps:
       - uses: actions/checkout@v4
 
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker image
-        uses: docker/build-push-action@v6
+      - uses: actions/setup-node@v4
         with:
-          context: .
-          push: false
-          load: true
-          tags: 9router:latest
-          platforms: linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          node-version: 22
 
-      - name: Save and compress image
-        run: |
-          docker save 9router:latest | gzip > 9router.tar.gz
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build CLI app
+        run: node cli/scripts/build-cli.js
+
+      - name: Package app for transfer
+        run: tar -czf /tmp/9router-app.tar.gz -C cli/app .
 
       - name: Copy to VPS
         uses: appleboy/scp-action@v0.1.7
@@ -37,8 +30,9 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: 9router.tar.gz
+          source: /tmp/9router-app.tar.gz
           target: /tmp
+          strip_components: 1
 
       - name: Deploy on VPS
         uses: appleboy/ssh-action@v1.2.0
@@ -47,18 +41,10 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            sudo docker load < /tmp/9router.tar.gz
-            sudo docker stop 9router 2>/dev/null || true
-            sudo docker rm 9router 2>/dev/null || true
-            sudo docker run -d \
-              --name 9router \
-              --restart always \
-              -p 20128:20128 \
-              -v 9router-data:/app/data \
-              -e DATA_DIR=/app/data \
-              -e PORT=20128 \
-              -e HOSTNAME=0.0.0.0 \
-              -e NODE_ENV=production \
-              9router:latest
-            rm -f /tmp/9router.tar.gz
-            sudo docker image prune -f
+            rm -rf /opt/9router/app.bak
+            mv /opt/9router/app /opt/9router/app.bak 2>/dev/null || true
+            mkdir -p /opt/9router/app
+            tar -xzf /tmp/9router-app.tar.gz -C /opt/9router/app
+            rm /tmp/9router-app.tar.gz
+            sudo systemctl restart 9router 2>/dev/null || echo "Service not yet installed, run setup first"
+            sudo systemctl enable 9router 2>/dev/null || true
