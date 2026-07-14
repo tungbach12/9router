@@ -27,7 +27,7 @@ jobs:
         run: node cli/scripts/build-cli.js
 
       - name: Package app for transfer
-        run: tar -czf /tmp/9router-app.tar.gz -C cli/app .
+        run: tar -czf 9router-app.tar.gz -C cli/app .
 
       - name: Copy to VPS
         uses: appleboy/scp-action@v0.1.7
@@ -35,9 +35,8 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: /tmp/9router-app.tar.gz
+          source: 9router-app.tar.gz
           target: /tmp
-          strip_components: 1
 
       - name: Deploy on VPS
         uses: appleboy/ssh-action@v1.2.0
