@@ -104,6 +104,8 @@ export const MODEL_CAPABILITIES = {
   "minimax-m2.7":      { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 200000, maxOutput: 48000 },
 };
 
+const KIRO_GPT_5_6_CAPABILITIES = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 };
+
 /**
  * Provider-specific capability overrides. Keyed by provider alias/id.
  */
@@ -116,6 +118,20 @@ export const PROVIDER_CAPABILITIES = {
     "z-ai/glm-5.2": { reasoning: true, thinkingFormat: "nvidia-glm", contextWindow: 200000, maxOutput: 128000 },
     "deepseek-ai/deepseek-v4-pro": { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 65536 },
     "deepseek-ai/deepseek-v4-flash": { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 65536 },
+  },
+  "kiro": {
+    "gpt-5.6-sol": KIRO_GPT_5_6_CAPABILITIES,
+    "gpt-5.6-terra": KIRO_GPT_5_6_CAPABILITIES,
+    "gpt-5.6-luna": KIRO_GPT_5_6_CAPABILITIES,
+    "gpt-5.6-sol-thinking": KIRO_GPT_5_6_CAPABILITIES,
+    "gpt-5.6-terra-thinking": KIRO_GPT_5_6_CAPABILITIES,
+    "gpt-5.6-luna-thinking": KIRO_GPT_5_6_CAPABILITIES,
+    "gpt-5.6-sol-agentic": KIRO_GPT_5_6_CAPABILITIES,
+    "gpt-5.6-terra-agentic": KIRO_GPT_5_6_CAPABILITIES,
+    "gpt-5.6-luna-agentic": KIRO_GPT_5_6_CAPABILITIES,
+    "gpt-5.6-sol-thinking-agentic": KIRO_GPT_5_6_CAPABILITIES,
+    "gpt-5.6-terra-thinking-agentic": KIRO_GPT_5_6_CAPABILITIES,
+    "gpt-5.6-luna-thinking-agentic": KIRO_GPT_5_6_CAPABILITIES,
   },
   // CodeBuddy.cn — authoritative per-model metadata from the gateway's model
   // config (contextWindow=maxInputTokens, maxOutput=maxOutputTokens, vision=
@@ -279,13 +295,17 @@ export const PATTERN_CAPABILITIES = [
 export function getCapabilitiesForModel(provider, model) {
   if (!model) return { ...DEFAULT_CAPABILITIES };
 
+  // Canonical exact lookup strips vendor prefix: "anthropic/claude-opus-4.7" -> "claude-opus-4.7".
+  const baseModel = model.includes("/") ? model.split("/").pop() : model;
+
   // 1. Provider-specific override
-  if (provider && PROVIDER_CAPABILITIES[provider]?.[model]) {
-    return { ...DEFAULT_CAPABILITIES, ...PROVIDER_CAPABILITIES[provider][model] };
+  if (provider) {
+    const providerCaps = PROVIDER_CAPABILITIES[provider];
+    if (providerCaps?.[model]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[model] };
+    if (providerCaps?.[baseModel]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[baseModel] };
   }
 
-  // 2. Canonical exact (strip vendor prefix: "anthropic/claude-opus-4.7" -> "claude-opus-4.7")
-  const baseModel = model.includes("/") ? model.split("/").pop() : model;
+  // 2. Canonical exact
   if (MODEL_CAPABILITIES[baseModel]) return { ...DEFAULT_CAPABILITIES, ...MODEL_CAPABILITIES[baseModel] };
   if (MODEL_CAPABILITIES[model]) return { ...DEFAULT_CAPABILITIES, ...MODEL_CAPABILITIES[model] };
 
