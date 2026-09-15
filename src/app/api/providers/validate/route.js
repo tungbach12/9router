@@ -6,6 +6,7 @@ import { resolveOllamaLocalHost, resolveXiaomiTokenplanBaseUrl, PROVIDERS } from
 import { openaiToCommandCodeRequest } from "open-sse/translator/request/openai-to-commandcode.js";
 import { resolveQoderCredentials, resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { normalizeProviderId } from "@/lib/providerNormalization";
+import { CLAUDE_CLI_SPOOF_HEADERS } from "open-sse/providers/shared.js";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
 // Returns true if API key is accepted (status !== 401 && !== 403).
@@ -159,6 +160,8 @@ export async function POST(request) {
         const messagesUrl = `${normalizedBase}/v1/messages`;
         const model = node.defaultModel || "claude-3-haiku-20240307";
 
+        // agentrouter WAF gates even the validate probe on claude-cli fingerprint
+        const isAgentRouter = (normalizedBase || "").includes("agentrouter.org");
         const res = await fetch(messagesUrl, {
           method: "POST",
           headers: {
@@ -166,6 +169,7 @@ export async function POST(request) {
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
             "Authorization": `Bearer ${apiKey}`,
+            ...(isAgentRouter ? CLAUDE_CLI_SPOOF_HEADERS : {}),
           },
           body: JSON.stringify({
             model,

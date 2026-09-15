@@ -10,6 +10,7 @@ import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { CLAUDE_CLI_SPOOF_HEADERS } from "open-sse/providers/shared.js";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { resolveClineModels, resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 
@@ -525,13 +526,16 @@ export async function GET(request, { params }) {
       }
 
       const url = `${baseUrl}/models`;
+      // agentrouter WAF gates even GET /models on claude-cli fingerprint
+      const isAgentRouter = baseUrl.includes("agentrouter.org");
       const response = await fetch(url, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
           "x-api-key": connection.apiKey,
           "anthropic-version": "2023-06-01",
-          "Authorization": `Bearer ${connection.apiKey}`
+          "Authorization": `Bearer ${connection.apiKey}`,
+          ...(isAgentRouter ? CLAUDE_CLI_SPOOF_HEADERS : {}),
         },
       });
 
