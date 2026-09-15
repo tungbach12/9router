@@ -1,6 +1,6 @@
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS, PROVIDER_OAUTH } from "../config/providers.js";
-import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE, selectAnthropicBeta } from "../providers/shared.js";
+import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE, selectAnthropicBeta, CLAUDE_CLI_SPOOF_HEADERS } from "../providers/shared.js";
 import { resolveOpenAICompatibleApiType } from "../services/provider.js";
 import { OAUTH_ENDPOINTS, buildKimiHeaders } from "../config/appConstants.js";
 import { buildClineHeaders } from "../shared/clineAuth.js";
@@ -170,10 +170,16 @@ export class DefaultExecutor extends BaseExecutor {
     }
 
     // Strip first-party Claude Code identity headers for non-Anthropic anthropic-compatible upstreams
+    // EXCEPT when spoofClaudeHeaders is set: agentrouter's WAF gates on official
+    // claude-cli fingerprint (Anthropic-Beta incl. claude-code-20250219, UA, X-App).
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || "";
       const isOfficialAnthropic = baseUrl === "" || baseUrl.includes("api.anthropic.com");
-      if (!isOfficialAnthropic) {
+      const spoofClaude = credentials?.providerSpecificData?.spoofClaudeHeaders === true
+        && baseUrl.includes("agentrouter.org");
+      if (spoofClaude) {
+        Object.assign(headers, CLAUDE_CLI_SPOOF_HEADERS);
+      } else if (!isOfficialAnthropic) {
         // Some third-party Anthropic-compatible gateways require Bearer auth in
         // addition to x-api-key. Send both (x-api-key already set above) so
         // gateways that read either header succeed.
