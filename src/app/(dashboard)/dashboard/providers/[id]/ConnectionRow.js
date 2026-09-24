@@ -6,9 +6,10 @@ import PropTypes from "prop-types";
 import { Badge, Toggle, Tooltip } from "@/shared/components";
 import CooldownTimer from "./CooldownTimer";
 
-export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
+export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null, onToggleFastMode = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
+  const [updatingFast, setUpdatingFast] = useState(false);
   const proxyDropdownRef = useRef(null);
 
   const proxyPoolMap = new Map((proxyPools || []).map((pool) => [pool.id, pool]));
@@ -23,6 +24,14 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
       : hasLegacyProxy
         ? `Legacy: ${connection.providerSpecificData?.connectionProxyUrl}`
         : "";
+  const fastTier = connection.providerSpecificData?.requestDefaults?.serviceTier;
+  const fastModeOn = fastTier === "priority" || fastTier === "fast";
+  const fastTooltip = "Fast mode: 1.5x generation speed, consumes ChatGPT credits at 2.5x the standard rate (GPT-5.6/5.5).";
+  const handleToggleFast = async () => {
+    if (!onToggleFastMode) return;
+    setUpdatingFast(true);
+    try { await onToggleFastMode(!fastModeOn); } finally { setUpdatingFast(false); }
+  };
   const autoPingTooltip = autoPing?.provider === "codex"
     ? "Auto-starts the next 5h Codex window after reset by sending a tiny gpt-5.5 request. Consumes a small amount of quota."
     : "When your 5h quota runs out, auto-sends a request the moment it resets so a new window starts right away.";
@@ -257,6 +266,18 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
               </button>
             </Tooltip>
           )}
+          {onToggleFastMode && (
+            <Tooltip text={fastTooltip}>
+              <button
+                onClick={handleToggleFast}
+                disabled={updatingFast}
+                className={`flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${fastModeOn ? "text-primary" : "text-text-muted hover:text-primary"}`}
+              >
+                <span className="material-symbols-outlined text-[18px]">{updatingFast ? "progress_activity" : "speed"}</span>
+                <span className="text-[10px] leading-tight">Fast</span>
+              </button>
+            </Tooltip>
+          )}
           <button onClick={onEdit} className="flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-black/5 hover:text-primary dark:hover:bg-white/5">
             <span className="material-symbols-outlined text-[18px]">edit</span>
             <span className="text-[10px] leading-tight">Edit</span>
@@ -304,6 +325,7 @@ ConnectionRow.propTypes = {
   onMoveDown: PropTypes.func.isRequired,
   onToggleActive: PropTypes.func.isRequired,
   onUpdateProxy: PropTypes.func,
+  onToggleFastMode: PropTypes.func,
   onEdit: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
   oneByOneStatus: PropTypes.shape({
