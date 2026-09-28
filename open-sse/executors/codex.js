@@ -521,12 +521,6 @@ export class CodexExecutor extends BaseExecutor {
     delete body.safety_identifier; // Droid CLI sends this but Codex doesn't support it
     delete body.previous_response_id; // store=false → backend can't resolve previous resp; avoid 404
 
-    // Fast mode (1.5x): connection-level default set via the dashboard "Fast"
-    // toggle (providerSpecificData.requestDefaults.serviceTier). Applies only
-    // when the request itself didn't carry a service_tier.
-    if (!body.service_tier && credentials?.providerSpecificData?.requestDefaults?.serviceTier) {
-      body.service_tier = credentials.providerSpecificData.requestDefaults.serviceTier;
-    }
     if (body.service_tier === "fast") body.service_tier = "priority";
     if (body.service_tier && body.service_tier !== "priority") delete body.service_tier;
 

@@ -382,21 +382,6 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
     } catch (e) { console.log("proxy error:", e); }
   };
 
-  // Codex Fast mode (1.5x speed, 2.5x credits) — stored as
-  // providerSpecificData.requestDefaults.serviceTier; executor injects it
-  // as service_tier=priority when the request doesn't set one itself.
-  const handleToggleFastMode = async (connId, enabled) => {
-    const conn = connections.find((c) => c.id === connId);
-    const psd = { ...(conn?.providerSpecificData || {}) };
-    const rd = { ...(psd.requestDefaults || {}) };
-    if (enabled) rd.serviceTier = "priority"; else delete rd.serviceTier;
-    const nextPsd = { ...psd, requestDefaults: Object.keys(rd).length > 0 ? rd : null };
-    try {
-      const res = await fetch(`/api/providers/${connId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ providerSpecificData: nextPsd }) });
-      if (res.ok) setConnections((prev) => prev.map((c) => c.id === connId ? { ...c, providerSpecificData: nextPsd } : c));
-    } catch (e) { console.log("fast mode error:", e); }
-  };
-
   const handleSaveApiKey = async (formData) => {
     try {
       const res = await fetch("/api/providers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: providerId, ...formData }) });
@@ -462,7 +447,6 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
                   onMoveDown={() => handleSwapPriority(idx, idx + 1)}
                   onToggleActive={(isActive) => handleToggleActive(conn.id, isActive)}
                   onUpdateProxy={(poolId) => handleUpdateProxy(conn.id, poolId)}
-                  onToggleFastMode={conn.provider === "codex" ? (enabled) => handleToggleFastMode(conn.id, enabled) : null}
                   onEdit={() => { setSelectedConnection(conn); setShowEditModal(true); }}
                   onDelete={() => handleDelete(conn.id)}
                 />

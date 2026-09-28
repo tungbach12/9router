@@ -1063,26 +1063,6 @@ export default function ProviderDetailPage() {
                     console.log("Error updating proxy:", error);
                   }
                 }}
-                onToggleFastMode={conn.provider === "codex" ? async (enabled) => {
-                  try {
-                    const psd = { ...(conn.providerSpecificData || {}) };
-                    const rd = { ...(psd.requestDefaults || {}) };
-                    if (enabled) rd.serviceTier = "priority"; else delete rd.serviceTier;
-                    const nextPsd = { ...psd, requestDefaults: Object.keys(rd).length > 0 ? rd : null };
-                    const res = await fetch(`/api/providers/${conn.id}`, {
-                      method: "PUT",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ providerSpecificData: nextPsd }),
-                    });
-                    if (res.ok) {
-                      setConnections(prev => prev.map(c =>
-                        c.id === conn.id ? { ...c, providerSpecificData: nextPsd } : c
-                      ));
-                    }
-                  } catch (error) {
-                    console.log("Error toggling fast mode:", error);
-                  }
-                } : null}
                 onEdit={() => {
                   setSelectedConnection(conn);
                   setShowEditModal(true);

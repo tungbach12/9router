@@ -25,32 +25,6 @@ describe("Codex fast tier and capacity handling", () => {
     expect(body.reasoning.effort).toBe("xhigh");
   });
 
-  it("applies the connection-level Fast default only when the request sets no tier", () => {
-    const executor = new CodexExecutor();
-    const fastCreds = { providerSpecificData: { requestDefaults: { serviceTier: "priority" } } };
-
-    const injected = executor.transformRequest("gpt-5.6-sol", {
-      model: "gpt-5.6-sol",
-      input: "hi",
-    }, true, fastCreds);
-    expect(injected.service_tier).toBe("priority");
-
-    // No connection default (null requestDefaults from dashboard off-switch) → no tier
-    const off = executor.transformRequest("gpt-5.6-sol", {
-      model: "gpt-5.6-sol",
-      input: "hi",
-    }, true, { providerSpecificData: { requestDefaults: null } });
-    expect(off.service_tier).toBeUndefined();
-
-    // Explicit client tier wins over the connection default
-    const explicit = executor.transformRequest("gpt-5.6-sol", {
-      model: "gpt-5.6-sol",
-      input: "hi",
-      service_tier: "default",
-    }, true, fastCreds);
-    expect(explicit.service_tier).toBeUndefined();
-  });
-
   it("uses ChatGPT workspace header fallback", () => {
     const executor = new CodexExecutor();
     const headers = executor.buildHeaders({
