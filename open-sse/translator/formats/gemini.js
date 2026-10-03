@@ -312,9 +312,25 @@ function flattenTypeArrays(obj) {
 
 // Infer missing type=object when properties exist (Gemini requires explicit type)
 function ensureObjectType(obj) {
-  if (!obj || typeof obj !== "object") return;
-  if (obj.properties && !obj.type) obj.type = "object";
-  for (const v of Object.values(obj)) if (v && typeof v === "object") ensureObjectType(v);
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return;
+  if (obj.properties && typeof obj.properties === "object" && !Array.isArray(obj.properties)) {
+    if (!obj.type) obj.type = "object";
+    for (const v of Object.values(obj.properties)) {
+      if (v && typeof v === "object") ensureObjectType(v);
+    }
+  }
+  if (obj.items && typeof obj.items === "object") {
+    if (Array.isArray(obj.items)) {
+      obj.items.forEach(item => ensureObjectType(item));
+    } else {
+      ensureObjectType(obj.items);
+    }
+  }
+  for (const combo of ["anyOf", "oneOf", "allOf"]) {
+    if (Array.isArray(obj[combo])) {
+      obj[combo].forEach(item => ensureObjectType(item));
+    }
+  }
 }
 
 // Convert prefixItems (tuple validation) to items — Gemini cannot express tuples,

@@ -136,4 +136,32 @@ describe("Antigravity executor", () => {
     expect(system).not.toContain(ANTIGRAVITY_DEFAULT_SYSTEM);
     expect(system).not.toContain("Please ignore the following [ignore]");
   });
+
+  it("does not inject 'type: object' into parameters.properties when a tool parameter is named 'properties'", () => {
+    const out = openaiToAntigravityRequest("gemini-3.5-flash-low", {
+      messages: [{ role: "user", content: "hello" }],
+      tools: [{
+        type: "function",
+        function: {
+          name: "getJiraIssue",
+          description: "Get Jira Issue",
+          parameters: {
+            type: "object",
+            properties: {
+              issueIdOrKey: { type: "string" },
+              properties: { type: "array", items: {}, description: "Issue entity properties" },
+              view: { type: "string" },
+            },
+            required: ["issueIdOrKey"],
+          },
+        },
+      }],
+    }, true, { projectId: "project-1", connectionId: "conn-1" });
+
+    const decl = out.request.tools[0].functionDeclarations[0];
+    expect(decl.parameters.properties.properties).toBeDefined();
+    expect(decl.parameters.properties.properties.type).toBe("array");
+    expect(decl.parameters.properties.type).toBeUndefined();
+    expect(Object.keys(decl.parameters.properties)).toEqual(["issueIdOrKey", "properties", "view"]);
+  });
 });
