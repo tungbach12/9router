@@ -66,8 +66,9 @@ async function createLogSession(sourceFormat, targetFormat, model) {
     const folderName = `${sourceFormat}_${targetFormat}_${safeModel}_${timestamp}`;
     const sessionPath = path.join(LOGS_DIR, folderName);
     
-    fs.mkdirSync(sessionPath, { recursive: true });
-    
+    // Session dir 0700 — captures contain prompts and request headers.
+    fs.mkdirSync(sessionPath, { recursive: true, mode: 0o700 });
+
     return sessionPath;
   } catch (err) {
     console.log("[LOG] Failed to create log session:", err.message);
@@ -75,37 +76,37 @@ async function createLogSession(sourceFormat, targetFormat, model) {
   }
 }
 
-// Write JSON file
+// Write JSON file. Mode 0600: captures carry request headers and full prompt bodies.
 function writeJsonFile(sessionPath, filename, data) {
   if (!fs || !sessionPath) return;
-  
+
   try {
     const filePath = path.join(sessionPath, filename);
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), { mode: 0o600 });
   } catch (err) {
     console.log(`[LOG] Failed to write ${filename}:`, err.message);
   }
 }
 
-// Mask sensitive data in headers (DISABLED - keep full token for testing)
+// Mask sensitive data in headers before writing them to disk.
+// Captures are world-readable by default (umask 022) and are long-lived on disk,
+// so raw `authorization` / `x-api-key` values would be a standing credential leak.
+// Only the tail is kept — enough to correlate two requests, not enough to replay one.
 function maskSensitiveHeaders(headers) {
   if (!headers) return {};
-  return { ...headers };
-  
-  // Old masking code (disabled):
-  // const masked = { ...headers };
-  // const sensitiveKeys = ["authorization", "x-api-key", "cookie", "token"];
-  // 
-  // for (const key of Object.keys(masked)) {
-  //   const lowerKey = key.toLowerCase();
-  //   if (sensitiveKeys.some(sk => lowerKey.includes(sk))) {
-  //     const value = masked[key];
-  //     if (value && value.length > 20) {
-  //       masked[key] = value.slice(0, 10) + "..." + value.slice(-5);
-  //     }
-  //   }
-  // }
-  // return masked;
+  const masked = { ...headers };
+  const sensitiveKeys = ["authorization", "x-api-key", "cookie", "token"];
+
+  for (const key of Object.keys(masked)) {
+    const lowerKey = String(key).toLowerCase();
+    if (sensitiveKeys.some(sk => lowerKey.includes(sk))) {
+      const value = masked[key];
+      if (typeof value === "string" && value.length > 20) {
+        masked[key] = `${value.slice(0, 10)}...${value.slice(-5)}`;
+      }
+    }
+  }
+  return masked;
 }
 
 // No-op logger when logging is disabled
@@ -198,7 +199,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       if (!fs || !sessionPath) return;
       try {
         const filePath = path.join(sessionPath, "5_res_provider.txt");
-        fs.appendFileSync(filePath, chunk);
+        fs.appendFileSync(filePath, chunk, { mode: 0o600 });
       } catch (err) {
         // Ignore append errors
       }
@@ -209,7 +210,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       if (!fs || !sessionPath) return;
       try {
         const filePath = path.join(sessionPath, "6_res_openai.txt");
-        fs.appendFileSync(filePath, chunk);
+        fs.appendFileSync(filePath, chunk, { mode: 0o600 });
       } catch (err) {
         // Ignore append errors
       }
@@ -228,7 +229,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       if (!fs || !sessionPath) return;
       try {
         const filePath = path.join(sessionPath, "7_res_client.txt");
-        fs.appendFileSync(filePath, chunk);
+        fs.appendFileSync(filePath, chunk, { mode: 0o600 });
       } catch (err) {
         // Ignore append errors
       }
