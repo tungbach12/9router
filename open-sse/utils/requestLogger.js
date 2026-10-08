@@ -9,12 +9,30 @@ let path = null;
 let LOGS_DIR = null;
 
 // Lazy load Node.js modules (avoid top-level await)
+// Resolve where request captures are written.
+//
+// This MUST land outside the Next build tree. The standalone server's cwd IS the
+// build output dir, so a cwd-based path writes captures into `.next/standalone/logs/`,
+// and the next `next build` dies on `ENOTEMPTY` while cleaning `.next/` — deleting
+// `server.js` and taking the whole gateway down. Never resolve to cwd unconditionally.
+//
+// Precedence: REQUEST_LOG_DIR → DATA_DIR/logs → ~/.9router/logs (never cwd).
+function resolveLogsDir() {
+  if (process.env.REQUEST_LOG_DIR) return process.env.REQUEST_LOG_DIR;
+  if (process.env.DATA_DIR) return path.join(process.env.DATA_DIR, "logs");
+
+  // No DATA_DIR: use the standard home location, never process.cwd().
+  // (imported lazily inside ensureNodeModules)
+  return null;
+}
+
 async function ensureNodeModules() {
   if (!isNode || !LOGGING_ENABLED || fs) return;
   try {
     fs = await import("fs");
     path = await import("path");
-    LOGS_DIR = path.join(typeof process !== "undefined" && process.cwd ? process.cwd() : ".", "logs");
+    const os = await import("os");
+    LOGS_DIR = resolveLogsDir() || path.join(os.homedir(), ".9router", "logs");
   } catch {
     // Running in non-Node environment (Worker, Browser, etc.)
   }
