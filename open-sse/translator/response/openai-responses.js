@@ -584,6 +584,11 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
       if (key) state.respToolChatIndex.set(key, idx);
     }
 
+    let funcName = item.name || "";
+    if (funcName.startsWith("default.")) {
+      funcName = funcName.slice("default.".length);
+    }
+
     return buildChunk(
       { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
       {
@@ -591,7 +596,7 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
           index: idx,
           id: state.currentToolCallId,
           type: OPENAI_BLOCK.FUNCTION,
-          function: { name: item.name || "", arguments: "" }
+          function: { name: funcName, arguments: "" }
         }]
       }
     );
@@ -607,9 +612,37 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     const idx = known ?? Math.max(0, (state.toolCallIndex || 1) - 1);
     state.respToolArgsEmitted ??= new Set();
     state.respToolArgsEmitted.add(idx);
+    state.respToolArgsHasDelta ??= new Set();
+    state.respToolArgsHasDelta.add(idx);
     return buildChunk(
       { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
       { tool_calls: [{ index: idx, function: { arguments: argsDelta } }] }
+    );
+  }
+
+  // Complete function-call arguments may arrive in a dedicated done event
+  // without any preceding delta (seen on OpenCode Muse Spark). Emit the full
+  // payload exactly once; do not duplicate it when streamed deltas were sent.
+  if (eventType === "response.function_call_arguments.done") {
+    const key = data.item_id;
+    const idx = (key && state.respToolChatIndex?.get(key)) ?? Math.max(0, (state.toolCallIndex || 1) - 1);
+    state.respToolArgsEmitted ??= new Set();
+    state.respToolArgsHasDelta ??= new Set();
+    if (state.respToolArgsHasDelta.has(idx) || state.respToolArgsEmitted.has(idx)) return null;
+    const args = typeof data.arguments === "string" && data.arguments ? data.arguments : "{}";
+    // Some compatible providers send a premature empty placeholder here, then
+    // include the actual arguments in response.output_item.done. Defer `{}` so
+    // a later complete item can win; its branch emits the placeholder only if
+    // no useful arguments arrive at all.
+    if (args === "{}") {
+      state.respToolArgsEmptyPending ??= new Set();
+      state.respToolArgsEmptyPending.add(idx);
+      return null;
+    }
+    state.respToolArgsEmitted.add(idx);
+    return buildChunk(
+      { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
+      { tool_calls: [{ index: idx, function: { arguments: args } }] }
     );
   }
 
@@ -620,15 +653,29 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     const key = data.item?.id || data.item_id;
     const idx = (key && state.respToolChatIndex?.get(key)) ?? Math.max(0, (state.toolCallIndex || 1) - 1);
     const fullArgs = data.item?.arguments;
+    state.respToolArgsEmitted ??= new Set();
     if (typeof fullArgs === "string" && fullArgs) {
-      state.respToolArgsEmitted ??= new Set();
-      if (!state.respToolArgsEmitted.has(idx)) {
+      state.respToolArgsEmptyPending?.delete(idx);
+      const emitted = state.respToolArgsEmitted.has(idx);
+      const hadDelta = state.respToolArgsHasDelta?.has(idx);
+      // Deltas are already complete on the stream path. For done-only upstreams,
+      // however, a prior `{}` placeholder is not useful: emit the final complete
+      // arguments instead. If no useful final payload arrives, keep `{}` as the
+      // fail-soft fallback after output_item.done.
+      if ((!emitted || !hadDelta) && (fullArgs !== "{}" || !emitted)) {
         state.respToolArgsEmitted.add(idx);
         return buildChunk(
           { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
           { tool_calls: [{ index: idx, function: { arguments: fullArgs } }] }
         );
       }
+    }
+    if (state.respToolArgsEmptyPending?.delete(idx) && !state.respToolArgsEmitted.has(idx)) {
+      state.respToolArgsEmitted.add(idx);
+      return buildChunk(
+        { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
+        { tool_calls: [{ index: idx, function: { arguments: "{}" } }] }
+      );
     }
     return null;
   }

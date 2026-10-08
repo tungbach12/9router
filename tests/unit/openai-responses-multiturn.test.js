@@ -108,6 +108,46 @@ describe("openai ↔ responses multi-turn reasoning", () => {
     expect(enc).toBe("ENC_KEEP_ME");
   });
 
+  it("sanitizes dots in tool names for responses input and tool definitions", () => {
+    const body = {
+      model: "gpt-6-luna",
+      messages: [
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "call_123",
+              type: "function",
+              function: { name: "default.Read", arguments: "{}" },
+            },
+            {
+              id: "call_456",
+              type: "function",
+              function: { name: "default.Bash", arguments: "{}" },
+            },
+          ],
+        },
+      ],
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "default.Read",
+            description: "Read file",
+            parameters: { type: "object", properties: {} },
+          },
+        },
+      ],
+    };
+
+    const out = openaiToOpenAIResponsesRequest("gpt-6-luna", body, true, null);
+    const funcCalls = out.input.filter((i) => i.type === "function_call");
+    expect(funcCalls).toHaveLength(2);
+    expect(funcCalls[0].name).toBe("default_Read");
+    expect(funcCalls[1].name).toBe("default_Bash");
+    expect(out.tools[0].name).toBe("default_Read");
+  });
+
   it("translateRequest openai→openai-responses preserves encrypted blob", () => {
     const body = {
       model: "grok-4.5",

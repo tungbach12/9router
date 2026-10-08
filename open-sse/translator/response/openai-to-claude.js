@@ -197,6 +197,12 @@ export function openaiToClaudeResponse(chunk, state) {
         if (toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
           toolName = toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length);
         }
+        // Restore tool name if model emitted namespace prefix (e.g. default.Read -> Read, default_Read -> Read)
+        if (toolName.startsWith("default.")) {
+          toolName = toolName.slice("default.".length);
+        } else if (toolName.startsWith("default_")) {
+          toolName = toolName.slice("default_".length);
+        }
 
         results.push({
           type: "content_block_start",

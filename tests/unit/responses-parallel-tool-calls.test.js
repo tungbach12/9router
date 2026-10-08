@@ -105,6 +105,81 @@ describe("responses parallel tool calls keep their own index", () => {
     expect(JSON.parse(calls[0].args)).toEqual(JSON.parse(PAYLOADS[0]));
   });
 
+  it("emits done-only Muse Spark arguments through to Claude tool_use", () => {
+    const args = JSON.stringify({ path: "/repo/README.md", pattern: "TODO" });
+    const events = [
+      added("fc_done_only", "call_done_only", "Grep"),
+      {
+        type: "response.function_call_arguments.done",
+        item_id: "fc_done_only",
+        arguments: args,
+      },
+      done("fc_done_only", "call_done_only", "Grep"),
+    ];
+    const state = initState(FORMATS.CLAUDE);
+    const out = [];
+    for (const ev of events) {
+      for (const r of translateResponse(FORMATS.OPENAI_RESPONSES, FORMATS.CLAUDE, ev, state)) out.push(r);
+    }
+    for (const r of translateResponse(FORMATS.OPENAI_RESPONSES, FORMATS.CLAUDE, null, state)) out.push(r);
+
+    const starts = out.filter((r) => r?.type === "content_block_start" && r?.content_block?.type === "tool_use");
+    const deltas = out.filter((r) => r?.delta?.type === "input_json_delta");
+    expect(starts).toHaveLength(1);
+    expect(starts[0].content_block.name).toBe("Grep");
+    expect(deltas).toHaveLength(1);
+    expect(JSON.parse(deltas[0].delta.partial_json)).toEqual({ path: "/repo/README.md", pattern: "TODO" });
+  });
+
+  it("forwards empty arguments when output_item.done has no final payload", () => {
+    const events = [
+      added("fc_empty_final", "call_empty_final", "read"),
+      {
+        type: "response.function_call_arguments.done",
+        item_id: "fc_empty_final",
+        arguments: "{}",
+      },
+      {
+        type: "response.output_item.done",
+        item: {
+          id: "fc_empty_final",
+          type: "function_call",
+          call_id: "call_empty_final",
+          name: "read",
+          arguments: "",
+        },
+      },
+    ];
+    const { chunks } = runStream(events);
+    const calls = accumulate({}, chunks);
+    expect(Object.keys(calls)).toHaveLength(1);
+    expect(calls[0].args).toBe("{}");
+  });
+
+  it("prefers populated output_item.done arguments over an empty arguments.done event", () => {
+    const events = [
+      added("fc_empty_then_full", "call_empty_then_full", "read"),
+      {
+        type: "response.function_call_arguments.done",
+        item_id: "fc_empty_then_full",
+        arguments: "{}",
+      },
+      {
+        type: "response.output_item.done",
+        item: {
+          id: "fc_empty_then_full",
+          type: "function_call",
+          call_id: "call_empty_then_full",
+          name: "read",
+          arguments: JSON.stringify({ file_path: "/repo/README.md" }),
+        },
+      },
+    ];
+    const { chunks } = runStream(events);
+    const calls = accumulate({}, chunks);
+    expect(JSON.parse(calls[0].args)).toEqual({ file_path: "/repo/README.md" });
+  });
+
   it("deltas without item_id fall back to the most recent call (legacy behavior)", () => {
     const events = [
       added("fc_0", "call_0", "read_file"),

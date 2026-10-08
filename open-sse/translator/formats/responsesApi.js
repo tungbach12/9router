@@ -25,6 +25,19 @@ export function normalizeResponsesInput(input) {
 
 // Strict Responses upstreams reject overlong call_ids with InputValidationError (#393).
 export const MAX_RESPONSES_CALL_ID_LEN = 64;
+export const MAX_RESPONSES_TOOL_NAME_LEN = 64;
+
+/**
+ * Sanitize function / tool name for OpenAI Responses API.
+ * OpenAI regex requirement: ^[a-zA-Z0-9_-]+$
+ * Characters such as '.' (e.g. from MCP tools or multi-agent names like default.Read)
+ * must be replaced with '_' to avoid HTTP 400 invalid_request_error.
+ */
+export function sanitizeResponsesToolName(name) {
+  if (typeof name !== "string" || !name) return "tool";
+  const sanitized = name.replace(/[^a-zA-Z0-9_-]/g, "_");
+  return (sanitized || "tool").slice(0, MAX_RESPONSES_TOOL_NAME_LEN);
+}
 
 // Fallback ids share one Date.now() when a batch of items is sanitized in a tight
 // loop — a per-process sequence keeps same-millisecond ids unique so
