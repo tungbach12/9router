@@ -94,15 +94,22 @@ function writeJsonFile(sessionPath, filename, data) {
 // Only the tail is kept — enough to correlate two requests, not enough to replay one.
 function maskSensitiveHeaders(headers) {
   if (!headers) return {};
-  const masked = { ...headers };
+  // Accept a Headers instance / iterable of pairs, not just a plain object —
+  // `{...new Headers(...)}` yields {} and would leak every value verbatim.
+  const source = (typeof headers.entries === "function")
+    ? Object.fromEntries(headers.entries())
+    : headers;
+  const masked = { ...source };
   const sensitiveKeys = ["authorization", "x-api-key", "cookie", "token"];
 
   for (const key of Object.keys(masked)) {
     const lowerKey = String(key).toLowerCase();
     if (sensitiveKeys.some(sk => lowerKey.includes(sk))) {
       const value = masked[key];
-      if (typeof value === "string" && value.length > 20) {
-        masked[key] = `${value.slice(0, 10)}...${value.slice(-5)}`;
+      if (typeof value === "string") {
+        masked[key] = value.length > 20
+          ? `${value.slice(0, 10)}...${value.slice(-5)}`
+          : "***";
       }
     }
   }

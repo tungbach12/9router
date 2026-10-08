@@ -80,6 +80,35 @@ describe("requestLogger redaction + permissions", () => {
     expect(data.headers["user-agent"]).toBe("claude-cli/1.0");
   });
 
+  it("fully masks short sensitive values instead of leaving them raw", async () => {
+    const { createRequestLogger } = await importFresh();
+    const logger = await createRequestLogger("claude", "openai", "m");
+
+    logger.logClientRawRequest("/v1/messages", {}, {
+      authorization: "Bearer abc",
+      "x-api-key": "short-key",
+    });
+
+    const data = JSON.parse(fs.readFileSync(path.join(logger.sessionPath, "1_req_client.json"), "utf8"));
+    expect(data.headers.authorization).toBe("***");
+    expect(data.headers["x-api-key"]).toBe("***");
+  });
+
+  it("redacts a Headers instance (iterable, not a plain object)", async () => {
+    const { createRequestLogger } = await importFresh();
+    const logger = await createRequestLogger("claude", "openai", "m");
+
+    const headers = new Headers();
+    headers.set("x-api-key", SECRET);
+    headers.set("content-type", "application/json");
+
+    logger.logClientRawRequest("/v1/messages", {}, headers);
+
+    const raw = fs.readFileSync(path.join(logger.sessionPath, "1_req_client.json"), "utf8");
+    expect(raw).not.toContain(SECRET);
+    expect(raw).toContain("application/json");
+  });
+
   it("creates the capture dir and files without group/world access", async () => {
     const { createRequestLogger } = await importFresh();
     const logger = await createRequestLogger("claude", "openai", "m");
