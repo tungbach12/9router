@@ -15,9 +15,15 @@ const GLM53_FED = { vision: true, search: false, reasoning: true, contextWindow:
 describe("aggregateComboCapabilities: resolveCaps override", () => {
   const models = ["glm-cn/glm-5.3", "deepseek-v4.1-flash"];
 
+  // v0.5.99 added an exact `glm-5.3` entry (1M). This test used to assert the
+  // *pattern* default of 200k on the premise that no exact entry existed; that
+  // premise is stale, so assert the pattern fallback with a model that still has
+  // one — glm-5.1 is pattern-only at 200k.
+  const patternOnlyModels = ["glm-cn/glm-5.1", "deepseek-v4.1-flash"];
+
   it("falls back to the pattern default without a resolver", () => {
-    const caps = aggregateComboCapabilities(models);
-    // glm-5.3 has no exact entry, so the *glm-5.3* pattern gives 200k and caps the combo.
+    const caps = aggregateComboCapabilities(patternOnlyModels);
+    // glm-5.1 has no exact entry, so the *glm-5.x* pattern gives 200k and caps the combo.
     expect(caps.contextWindow).toBe(200_000);
   });
 
